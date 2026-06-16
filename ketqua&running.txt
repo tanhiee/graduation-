@@ -1,0 +1,541 @@
+Windows PowerShell
+Copyright (C) Microsoft Corporation. All rights reserved.
+
+Install the latest PowerShell for new features and improvements! https://aka.ms/PSWindows
+
+PS C:\Users\ASUS\Downloads\graduation project> python anomaly_detection_pipeline.py
+2026-06-09 00:15:23.368762: I tensorflow/core/util/port.cc:153] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+2026-06-09 00:15:37.059866: I tensorflow/core/util/port.cc:153] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+======================================================================
+  ANOMALY DETECTION PIPELINE - CREDENTIAL STUFFING ON MOODLE LMS
+======================================================================
+
+[STEP 1] Đọc và tiền xử lý dữ liệu...
+  → Tổng số mẫu: 51625
+  → Phân bố nhãn:
+     Normal  (Label 0): 51092
+     Malicious (Label 1): 533
+  → Các cột ban đầu: ['timestamp', 'ip', 'req_per_IP_5min', 'error_ratio_per_IP', 'unique_UA_per_IP', 'size', 'Label']
+  → Đang thực hiện Feature Engineering...
+  → Features đã chọn để huấn luyện: ['req_per_IP_5min', 'error_ratio_per_IP', 'unique_UA_per_IP', 'size', 'time_gap_per_IP', 'req_regularity_per_IP', 'hour_of_day']
+  → Shape sau chuẩn hóa: (51625, 7)
+
+[STEP 2] Chia dữ liệu và thực hiện Tăng cường dữ liệu (Data Augmentation)...
+  → Đang bổ sung nhiễu Gaussian (Augmentation) vào time_gap_per_IP & req_regularity_per_IP...
+  → Normal Train (Sau tăng cường nhiễu): 40873 mẫu
+  → Normal Val                         : 10219 mẫu
+  → Malicious Test                     : 533 mẫu
+  → Evaluation Set                     : 10752 mẫu (Val + Test)
+
+[STEP 3] Huấn luyện Baseline Model (Isolation Forest)...
+  → Contamination ratio (True anomaly ratio): 0.010324
+  → Huấn luyện Isolation Forest trên tập Normal Train...
+
+  ✦ Isolation Forest - F1 Score (weighted): 0.9419
+  ✦ Classification Report:
+              precision    recall  f1-score   support
+
+      Normal     0.9592    0.9934    0.9760     10219
+   Malicious     0.6012    0.1895    0.2882       533
+
+    accuracy                         0.9536     10752
+   macro avg     0.7802    0.5915    0.6321     10752
+weighted avg     0.9414    0.9536    0.9419     10752
+
+
+[STEP 4] Xây dựng và huấn luyện Variational Autoencoder (VAE)...
+2026-06-09 00:16:05.241603: I tensorflow/core/platform/cpu_feature_guard.cc:210] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 AVX_VNNI FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+WARNING:tensorflow:From C:\Users\ASUS\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\keras\src\backend\tensorflow\core.py:216: The name tf.placeholder is deprecated. Please use tf.compat.v1.placeholder instead.
+
+Model: "encoder"
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Layer (type)                  ┃ Output Shape              ┃         Param # ┃ Connected to               ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ encoder_input (InputLayer)    │ (None, 7)                 │               0 │ -                          │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ enc_dropout (Dropout)         │ (None, 7)                 │               0 │ encoder_input[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ enc_dense1 (Dense)            │ (None, 64)                │             512 │ enc_dropout[0][0]          │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ enc_bn1 (BatchNormalization)  │ (None, 64)                │             256 │ enc_dense1[0][0]           │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ enc_dense2 (Dense)            │ (None, 32)                │           2,080 │ enc_bn1[0][0]              │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ enc_bn2 (BatchNormalization)  │ (None, 32)                │             128 │ enc_dense2[0][0]           │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ enc_dense3 (Dense)            │ (None, 16)                │             528 │ enc_bn2[0][0]              │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ z_mean (Dense)                │ (None, 8)                 │             136 │ enc_dense3[0][0]           │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ z_log_var (Dense)             │ (None, 8)                 │             136 │ enc_dense3[0][0]           │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ sampling (Sampling)           │ (None, 8)                 │               0 │ z_mean[0][0],              │
+│                               │                           │                 │ z_log_var[0][0]            │
+└───────────────────────────────┴───────────────────────────┴─────────────────┴────────────────────────────┘
+ Total params: 3,776 (14.75 KB)
+ Trainable params: 3,584 (14.00 KB)
+ Non-trainable params: 192 (768.00 B)
+Model: "decoder"
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━┓
+┃ Layer (type)                         ┃ Output Shape                ┃         Param # ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━┩
+│ decoder_input (InputLayer)           │ (None, 8)                   │               0 │
+├──────────────────────────────────────┼─────────────────────────────┼─────────────────┤
+│ dec_dense1 (Dense)                   │ (None, 16)                  │             144 │
+├──────────────────────────────────────┼─────────────────────────────┼─────────────────┤
+│ dec_bn1 (BatchNormalization)         │ (None, 16)                  │              64 │
+├──────────────────────────────────────┼─────────────────────────────┼─────────────────┤
+│ dec_dense2 (Dense)                   │ (None, 32)                  │             544 │
+├──────────────────────────────────────┼─────────────────────────────┼─────────────────┤
+│ dec_bn2 (BatchNormalization)         │ (None, 32)                  │             128 │
+├──────────────────────────────────────┼─────────────────────────────┼─────────────────┤
+│ dec_dense3 (Dense)                   │ (None, 64)                  │           2,112 │
+├──────────────────────────────────────┼─────────────────────────────┼─────────────────┤
+│ dec_output (Dense)                   │ (None, 7)                   │             455 │
+└──────────────────────────────────────┴─────────────────────────────┴─────────────────┘
+ Total params: 3,447 (13.46 KB)
+ Trainable params: 3,351 (13.09 KB)
+ Non-trainable params: 96 (384.00 B)
+
+  → Bắt đầu huấn luyện VAE trên 40873 mẫu Normal (đã Augmented)...
+Epoch 1/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 17s 3ms/step - kl_loss: 0.1793 - reconstruction_loss: 1.0579 - total_loss: 1.0759 - val_kl_loss: 0.1092 - val_reconstruction_loss: 0.5636 - val_total_loss: 0.5745 - learning_rate: 0.0010
+Epoch 2/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 1s 2ms/step - kl_loss: 0.1416 - reconstruction_loss: 0.6013 - total_loss: 0.6155 - val_kl_loss: 0.2843 - val_reconstruction_loss: 0.5398 - val_total_loss: 0.5682 - learning_rate: 0.0010
+Epoch 3/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 1s 2ms/step - kl_loss: 0.3797 - reconstruction_loss: 0.5566 - total_loss: 0.5946 - val_kl_loss: 0.6777 - val_reconstruction_loss: 0.4172 - val_total_loss: 0.4850 - learning_rate: 0.0010
+Epoch 4/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 8s 12ms/step - kl_loss: 0.7179 - reconstruction_loss: 0.4481 - total_loss: 0.5199 - val_kl_loss: 0.7390 - val_reconstruction_loss: 0.4028 - val_total_loss: 0.4767 - learning_rate: 0.0010
+Epoch 5/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 12s 18ms/step - kl_loss: 0.7412 - reconstruction_loss: 0.4391 - total_loss: 0.5132 - val_kl_loss: 0.7625 - val_reconstruction_loss: 0.3947 - val_total_loss: 0.4710 - learning_rate: 0.0010
+Epoch 6/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 2s 3ms/step - kl_loss: 0.8129 - reconstruction_loss: 0.4247 - total_loss: 0.5060 - val_kl_loss: 0.7933 - val_reconstruction_loss: 0.3857 - val_total_loss: 0.4650 - learning_rate: 0.0010
+Epoch 7/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 2s 3ms/step - kl_loss: 0.8620 - reconstruction_loss: 0.4140 - total_loss: 0.5002 - val_kl_loss: 0.9284 - val_reconstruction_loss: 0.3711 - val_total_loss: 0.4639 - learning_rate: 0.0010
+Epoch 8/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 2s 3ms/step - kl_loss: 0.9056 - reconstruction_loss: 0.4059 - total_loss: 0.4964 - val_kl_loss: 0.9635 - val_reconstruction_loss: 0.3639 - val_total_loss: 0.4602 - learning_rate: 0.0010
+Epoch 9/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 2s 3ms/step - kl_loss: 0.9416 - reconstruction_loss: 0.3985 - total_loss: 0.4927 - val_kl_loss: 0.9599 - val_reconstruction_loss: 0.3614 - val_total_loss: 0.4574 - learning_rate: 0.0010
+Epoch 10/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 2s 3ms/step - kl_loss: 0.9735 - reconstruction_loss: 0.3936 - total_loss: 0.4910 - val_kl_loss: 0.9455 - val_reconstruction_loss: 0.3570 - val_total_loss: 0.4516 - learning_rate: 0.0010
+Epoch 11/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 7s 11ms/step - kl_loss: 0.9620 - reconstruction_loss: 0.3928 - total_loss: 0.4891 - val_kl_loss: 0.9190 - val_reconstruction_loss: 0.3593 - val_total_loss: 0.4512 - learning_rate: 0.0010
+Epoch 12/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 13s 20ms/step - kl_loss: 0.9727 - reconstruction_loss: 0.3918 - total_loss: 0.4891 - val_kl_loss: 1.0226 - val_reconstruction_loss: 0.3520 - val_total_loss: 0.4542 - learning_rate: 0.0010
+Epoch 13/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 5s 8ms/step - kl_loss: 0.9798 - reconstruction_loss: 0.3899 - total_loss: 0.4879 - val_kl_loss: 0.9124 - val_reconstruction_loss: 0.3602 - val_total_loss: 0.4515 - learning_rate: 0.0010
+Epoch 14/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 2s 3ms/step - kl_loss: 0.9718 - reconstruction_loss: 0.3906 - total_loss: 0.4877 - val_kl_loss: 0.9671 - val_reconstruction_loss: 0.3528 - val_total_loss: 0.4495 - learning_rate: 0.0010
+Epoch 15/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 2s 3ms/step - kl_loss: 0.9708 - reconstruction_loss: 0.3886 - total_loss: 0.4857 - val_kl_loss: 0.9634 - val_reconstruction_loss: 0.3560 - val_total_loss: 0.4523 - learning_rate: 0.0010
+Epoch 16/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 2s 2ms/step - kl_loss: 1.0027 - reconstruction_loss: 0.3841 - total_loss: 0.4844 - val_kl_loss: 0.9183 - val_reconstruction_loss: 0.3568 - val_total_loss: 0.4487 - learning_rate: 0.0010
+Epoch 17/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 2s 2ms/step - kl_loss: 0.9882 - reconstruction_loss: 0.3858 - total_loss: 0.4847 - val_kl_loss: 0.8837 - val_reconstruction_loss: 0.3639 - val_total_loss: 0.4522 - learning_rate: 0.0010
+Epoch 18/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 2s 2ms/step - kl_loss: 0.9838 - reconstruction_loss: 0.3871 - total_loss: 0.4855 - val_kl_loss: 1.0325 - val_reconstruction_loss: 0.3462 - val_total_loss: 0.4495 - learning_rate: 0.0010
+Epoch 19/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 2s 2ms/step - kl_loss: 0.9955 - reconstruction_loss: 0.3849 - total_loss: 0.4845 - val_kl_loss: 0.9408 - val_reconstruction_loss: 0.3521 - val_total_loss: 0.4461 - learning_rate: 0.0010
+Epoch 20/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 12s 18ms/step - kl_loss: 1.0222 - reconstruction_loss: 0.3818 - total_loss: 0.4840 - val_kl_loss: 0.9843 - val_reconstruction_loss: 0.3517 - val_total_loss: 0.4502 - learning_rate: 0.0010
+Epoch 21/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 16s 24ms/step - kl_loss: 1.0402 - reconstruction_loss: 0.3789 - total_loss: 0.4829 - val_kl_loss: 0.9752 - val_reconstruction_loss: 0.3518 - val_total_loss: 0.4493 - learning_rate: 0.0010
+Epoch 22/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 11s 16ms/step - kl_loss: 1.0244 - reconstruction_loss: 0.3802 - total_loss: 0.4827 - val_kl_loss: 0.9716 - val_reconstruction_loss: 0.3492 - val_total_loss: 0.4463 - learning_rate: 0.0010
+Epoch 23/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 2s 3ms/step - kl_loss: 1.0002 - reconstruction_loss: 0.3823 - total_loss: 0.4823 - val_kl_loss: 1.0855 - val_reconstruction_loss: 0.3372 - val_total_loss: 0.4457 - learning_rate: 0.0010
+Epoch 24/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 2s 3ms/step - kl_loss: 1.0221 - reconstruction_loss: 0.3796 - total_loss: 0.4818 - val_kl_loss: 1.0045 - val_reconstruction_loss: 0.3489 - val_total_loss: 0.4493 - learning_rate: 0.0010
+Epoch 25/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 2s 3ms/step - kl_loss: 1.0197 - reconstruction_loss: 0.3788 - total_loss: 0.4808 - val_kl_loss: 1.0001 - val_reconstruction_loss: 0.3451 - val_total_loss: 0.4452 - learning_rate: 0.0010
+Epoch 26/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 2s 3ms/step - kl_loss: 1.0050 - reconstruction_loss: 0.3809 - total_loss: 0.4814 - val_kl_loss: 1.0186 - val_reconstruction_loss: 0.3470 - val_total_loss: 0.4489 - learning_rate: 0.0010
+Epoch 27/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 2s 3ms/step - kl_loss: 1.0250 - reconstruction_loss: 0.3798 - total_loss: 0.4823 - val_kl_loss: 1.0229 - val_reconstruction_loss: 0.3445 - val_total_loss: 0.4468 - learning_rate: 0.0010
+Epoch 28/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 2s 3ms/step - kl_loss: 1.0352 - reconstruction_loss: 0.3783 - total_loss: 0.4818 - val_kl_loss: 1.0436 - val_reconstruction_loss: 0.3429 - val_total_loss: 0.4473 - learning_rate: 0.0010
+Epoch 29/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 6s 9ms/step - kl_loss: 1.0155 - reconstruction_loss: 0.3795 - total_loss: 0.4811 - val_kl_loss: 0.9368 - val_reconstruction_loss: 0.3551 - val_total_loss: 0.4488 - learning_rate: 0.0010
+Epoch 30/200
+635/639 ━━━━━━━━━━━━━━━━━━━━ 0s 6ms/step - kl_loss: 1.0241 - reconstruction_loss: 0.3791 - total_loss: 0.4815
+Epoch 30: ReduceLROnPlateau reducing learning rate to 0.0005000000237487257.
+639/639 ━━━━━━━━━━━━━━━━━━━━ 4s 6ms/step - kl_loss: 1.0241 - reconstruction_loss: 0.3791 - total_loss: 0.4815 - val_kl_loss: 0.9910 - val_reconstruction_loss: 0.3472 - val_total_loss: 0.4463 - learning_rate: 0.0010
+Epoch 31/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 2s 2ms/step - kl_loss: 1.0223 - reconstruction_loss: 0.3773 - total_loss: 0.4795 - val_kl_loss: 1.0353 - val_reconstruction_loss: 0.3400 - val_total_loss: 0.4435 - learning_rate: 5.0000e-04
+Epoch 32/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 1s 2ms/step - kl_loss: 1.0316 - reconstruction_loss: 0.3765 - total_loss: 0.4797 - val_kl_loss: 0.9805 - val_reconstruction_loss: 0.3460 - val_total_loss: 0.4440 - learning_rate: 5.0000e-04
+Epoch 33/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 1s 2ms/step - kl_loss: 1.0236 - reconstruction_loss: 0.3763 - total_loss: 0.4787 - val_kl_loss: 0.9900 - val_reconstruction_loss: 0.3459 - val_total_loss: 0.4449 - learning_rate: 5.0000e-04
+Epoch 34/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 1s 2ms/step - kl_loss: 1.0416 - reconstruction_loss: 0.3745 - total_loss: 0.4787 - val_kl_loss: 1.0357 - val_reconstruction_loss: 0.3402 - val_total_loss: 0.4437 - learning_rate: 5.0000e-04
+Epoch 35/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 9s 14ms/step - kl_loss: 1.0229 - reconstruction_loss: 0.3770 - total_loss: 0.4792 - val_kl_loss: 0.9511 - val_reconstruction_loss: 0.3493 - val_total_loss: 0.4444 - learning_rate: 5.0000e-04
+Epoch 36/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 12s 19ms/step - kl_loss: 1.0233 - reconstruction_loss: 0.3777 - total_loss: 0.4800 - val_kl_loss: 0.9767 - val_reconstruction_loss: 0.3447 - val_total_loss: 0.4423 - learning_rate: 5.0000e-04
+Epoch 37/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 12s 18ms/step - kl_loss: 1.0346 - reconstruction_loss: 0.3758 - total_loss: 0.4793 - val_kl_loss: 1.0510 - val_reconstruction_loss: 0.3385 - val_total_loss: 0.4436 - learning_rate: 5.0000e-04
+Epoch 38/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 12s 18ms/step - kl_loss: 1.0628 - reconstruction_loss: 0.3737 - total_loss: 0.4800 - val_kl_loss: 1.0488 - val_reconstruction_loss: 0.3384 - val_total_loss: 0.4433 - learning_rate: 5.0000e-04
+Epoch 39/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 12s 18ms/step - kl_loss: 1.0519 - reconstruction_loss: 0.3738 - total_loss: 0.4790 - val_kl_loss: 1.0179 - val_reconstruction_loss: 0.3413 - val_total_loss: 0.4431 - learning_rate: 5.0000e-04
+Epoch 40/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 11s 17ms/step - kl_loss: 1.0175 - reconstruction_loss: 0.3780 - total_loss: 0.4797 - val_kl_loss: 1.0101 - val_reconstruction_loss: 0.3426 - val_total_loss: 0.4436 - learning_rate: 5.0000e-04
+Epoch 41/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 14s 22ms/step - kl_loss: 1.0381 - reconstruction_loss: 0.3750 - total_loss: 0.4788 - val_kl_loss: 1.0019 - val_reconstruction_loss: 0.3415 - val_total_loss: 0.4417 - learning_rate: 5.0000e-04
+Epoch 42/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 15s 23ms/step - kl_loss: 1.0353 - reconstruction_loss: 0.3745 - total_loss: 0.4780 - val_kl_loss: 0.9865 - val_reconstruction_loss: 0.3440 - val_total_loss: 0.4427 - learning_rate: 5.0000e-04
+Epoch 43/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 12s 18ms/step - kl_loss: 1.0208 - reconstruction_loss: 0.3767 - total_loss: 0.4788 - val_kl_loss: 0.9695 - val_reconstruction_loss: 0.3461 - val_total_loss: 0.4430 - learning_rate: 5.0000e-04
+Epoch 44/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 12s 18ms/step - kl_loss: 1.0208 - reconstruction_loss: 0.3770 - total_loss: 0.4790 - val_kl_loss: 0.9984 - val_reconstruction_loss: 0.3429 - val_total_loss: 0.4428 - learning_rate: 5.0000e-04
+Epoch 45/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 12s 19ms/step - kl_loss: 0.9959 - reconstruction_loss: 0.3790 - total_loss: 0.4786 - val_kl_loss: 1.0690 - val_reconstruction_loss: 0.3364 - val_total_loss: 0.4433 - learning_rate: 5.0000e-04
+Epoch 46/200
+638/639 ━━━━━━━━━━━━━━━━━━━━ 0s 15ms/step - kl_loss: 1.0247 - reconstruction_loss: 0.3768 - total_loss: 0.4792
+Epoch 46: ReduceLROnPlateau reducing learning rate to 0.0002500000118743628.
+639/639 ━━━━━━━━━━━━━━━━━━━━ 12s 18ms/step - kl_loss: 1.0247 - reconstruction_loss: 0.3768 - total_loss: 0.4792 - val_kl_loss: 1.0483 - val_reconstruction_loss: 0.3382 - val_total_loss: 0.4430 - learning_rate: 5.0000e-04
+Epoch 47/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 12s 18ms/step - kl_loss: 1.0500 - reconstruction_loss: 0.3744 - total_loss: 0.4794 - val_kl_loss: 1.0010 - val_reconstruction_loss: 0.3432 - val_total_loss: 0.4433 - learning_rate: 2.5000e-04
+Epoch 48/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 11s 18ms/step - kl_loss: 1.0354 - reconstruction_loss: 0.3752 - total_loss: 0.4788 - val_kl_loss: 1.0532 - val_reconstruction_loss: 0.3373 - val_total_loss: 0.4426 - learning_rate: 2.5000e-04
+Epoch 49/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 11s 17ms/step - kl_loss: 1.0464 - reconstruction_loss: 0.3724 - total_loss: 0.4771 - val_kl_loss: 0.9793 - val_reconstruction_loss: 0.3454 - val_total_loss: 0.4433 - learning_rate: 2.5000e-04
+Epoch 50/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 12s 18ms/step - kl_loss: 1.0220 - reconstruction_loss: 0.3747 - total_loss: 0.4769 - val_kl_loss: 1.0319 - val_reconstruction_loss: 0.3387 - val_total_loss: 0.4419 - learning_rate: 2.5000e-04
+Epoch 51/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 0s 15ms/step - kl_loss: 1.0244 - reconstruction_loss: 0.3748 - total_loss: 0.4772
+Epoch 51: ReduceLROnPlateau reducing learning rate to 0.0001250000059371814.
+639/639 ━━━━━━━━━━━━━━━━━━━━ 12s 18ms/step - kl_loss: 1.0244 - reconstruction_loss: 0.3748 - total_loss: 0.4772 - val_kl_loss: 0.9808 - val_reconstruction_loss: 0.3451 - val_total_loss: 0.4432 - learning_rate: 2.5000e-04
+Epoch 52/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 12s 18ms/step - kl_loss: 1.0155 - reconstruction_loss: 0.3768 - total_loss: 0.4784 - val_kl_loss: 1.0157 - val_reconstruction_loss: 0.3407 - val_total_loss: 0.4422 - learning_rate: 1.2500e-04
+Epoch 53/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 12s 18ms/step - kl_loss: 1.0440 - reconstruction_loss: 0.3735 - total_loss: 0.4779 - val_kl_loss: 0.9997 - val_reconstruction_loss: 0.3407 - val_total_loss: 0.4407 - learning_rate: 1.2500e-04
+Epoch 54/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 12s 18ms/step - kl_loss: 1.0297 - reconstruction_loss: 0.3749 - total_loss: 0.4778 - val_kl_loss: 1.0346 - val_reconstruction_loss: 0.3381 - val_total_loss: 0.4416 - learning_rate: 1.2500e-04
+Epoch 55/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 21s 18ms/step - kl_loss: 1.0407 - reconstruction_loss: 0.3737 - total_loss: 0.4778 - val_kl_loss: 1.0293 - val_reconstruction_loss: 0.3403 - val_total_loss: 0.4432 - learning_rate: 1.2500e-04
+Epoch 56/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 13s 20ms/step - kl_loss: 1.0293 - reconstruction_loss: 0.3741 - total_loss: 0.4771 - val_kl_loss: 1.0239 - val_reconstruction_loss: 0.3410 - val_total_loss: 0.4434 - learning_rate: 1.2500e-04
+Epoch 57/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 12s 18ms/step - kl_loss: 1.0366 - reconstruction_loss: 0.3742 - total_loss: 0.4778 - val_kl_loss: 1.0277 - val_reconstruction_loss: 0.3383 - val_total_loss: 0.4410 - learning_rate: 1.2500e-04
+Epoch 58/200
+634/639 ━━━━━━━━━━━━━━━━━━━━ 0s 9ms/step - kl_loss: 1.0374 - reconstruction_loss: 0.3734 - total_loss: 0.4771
+Epoch 58: ReduceLROnPlateau reducing learning rate to 6.25000029685907e-05.
+639/639 ━━━━━━━━━━━━━━━━━━━━ 6s 10ms/step - kl_loss: 1.0372 - reconstruction_loss: 0.3734 - total_loss: 0.4771 - val_kl_loss: 1.0077 - val_reconstruction_loss: 0.3424 - val_total_loss: 0.4432 - learning_rate: 1.2500e-04
+Epoch 59/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 2s 3ms/step - kl_loss: 1.0206 - reconstruction_loss: 0.3748 - total_loss: 0.4768 - val_kl_loss: 1.0184 - val_reconstruction_loss: 0.3399 - val_total_loss: 0.4417 - learning_rate: 6.2500e-05
+Epoch 60/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 2s 3ms/step - kl_loss: 1.0298 - reconstruction_loss: 0.3743 - total_loss: 0.4773 - val_kl_loss: 1.0091 - val_reconstruction_loss: 0.3408 - val_total_loss: 0.4417 - learning_rate: 6.2500e-05
+Epoch 61/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 2s 3ms/step - kl_loss: 1.0258 - reconstruction_loss: 0.3739 - total_loss: 0.4765 - val_kl_loss: 1.0172 - val_reconstruction_loss: 0.3394 - val_total_loss: 0.4411 - learning_rate: 6.2500e-05
+Epoch 62/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 2s 3ms/step - kl_loss: 1.0333 - reconstruction_loss: 0.3735 - total_loss: 0.4769 - val_kl_loss: 1.0393 - val_reconstruction_loss: 0.3395 - val_total_loss: 0.4434 - learning_rate: 6.2500e-05
+Epoch 63/200
+636/639 ━━━━━━━━━━━━━━━━━━━━ 0s 13ms/step - kl_loss: 1.0531 - reconstruction_loss: 0.3725 - total_loss: 0.4779
+Epoch 63: ReduceLROnPlateau reducing learning rate to 3.125000148429535e-05.
+639/639 ━━━━━━━━━━━━━━━━━━━━ 10s 16ms/step - kl_loss: 1.0531 - reconstruction_loss: 0.3725 - total_loss: 0.4778 - val_kl_loss: 1.0495 - val_reconstruction_loss: 0.3358 - val_total_loss: 0.4408 - learning_rate: 6.2500e-05
+Epoch 64/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 13s 20ms/step - kl_loss: 1.0631 - reconstruction_loss: 0.3699 - total_loss: 0.4762 - val_kl_loss: 1.0459 - val_reconstruction_loss: 0.3380 - val_total_loss: 0.4426 - learning_rate: 3.1250e-05
+Epoch 65/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 13s 19ms/step - kl_loss: 1.0539 - reconstruction_loss: 0.3721 - total_loss: 0.4775 - val_kl_loss: 1.0312 - val_reconstruction_loss: 0.3366 - val_total_loss: 0.4398 - learning_rate: 3.1250e-05
+Epoch 66/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 13s 19ms/step - kl_loss: 1.0405 - reconstruction_loss: 0.3734 - total_loss: 0.4775 - val_kl_loss: 1.0274 - val_reconstruction_loss: 0.3388 - val_total_loss: 0.4416 - learning_rate: 3.1250e-05
+Epoch 67/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 13s 20ms/step - kl_loss: 1.0444 - reconstruction_loss: 0.3717 - total_loss: 0.4762 - val_kl_loss: 1.0222 - val_reconstruction_loss: 0.3388 - val_total_loss: 0.4411 - learning_rate: 3.1250e-05
+Epoch 68/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 13s 19ms/step - kl_loss: 1.0321 - reconstruction_loss: 0.3732 - total_loss: 0.4764 - val_kl_loss: 1.0273 - val_reconstruction_loss: 0.3383 - val_total_loss: 0.4410 - learning_rate: 3.1250e-05
+Epoch 69/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 12s 19ms/step - kl_loss: 1.0355 - reconstruction_loss: 0.3742 - total_loss: 0.4778 - val_kl_loss: 1.0277 - val_reconstruction_loss: 0.3389 - val_total_loss: 0.4416 - learning_rate: 3.1250e-05
+Epoch 70/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 0s 17ms/step - kl_loss: 1.0338 - reconstruction_loss: 0.3742 - total_loss: 0.4776
+Epoch 70: ReduceLROnPlateau reducing learning rate to 1.5625000742147677e-05.
+639/639 ━━━━━━━━━━━━━━━━━━━━ 13s 20ms/step - kl_loss: 1.0338 - reconstruction_loss: 0.3742 - total_loss: 0.4776 - val_kl_loss: 1.0280 - val_reconstruction_loss: 0.3406 - val_total_loss: 0.4434 - learning_rate: 3.1250e-05
+Epoch 71/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 13s 21ms/step - kl_loss: 1.0341 - reconstruction_loss: 0.3726 - total_loss: 0.4760 - val_kl_loss: 1.0253 - val_reconstruction_loss: 0.3376 - val_total_loss: 0.4402 - learning_rate: 1.5625e-05
+Epoch 72/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 13s 19ms/step - kl_loss: 1.0331 - reconstruction_loss: 0.3736 - total_loss: 0.4769 - val_kl_loss: 1.0150 - val_reconstruction_loss: 0.3394 - val_total_loss: 0.4409 - learning_rate: 1.5625e-05
+Epoch 73/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 13s 20ms/step - kl_loss: 1.0324 - reconstruction_loss: 0.3739 - total_loss: 0.4771 - val_kl_loss: 1.0202 - val_reconstruction_loss: 0.3375 - val_total_loss: 0.4395 - learning_rate: 1.5625e-05
+Epoch 74/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 13s 20ms/step - kl_loss: 1.0300 - reconstruction_loss: 0.3741 - total_loss: 0.4771 - val_kl_loss: 1.0182 - val_reconstruction_loss: 0.3383 - val_total_loss: 0.4401 - learning_rate: 1.5625e-05
+Epoch 75/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 12s 19ms/step - kl_loss: 1.0334 - reconstruction_loss: 0.3739 - total_loss: 0.4772 - val_kl_loss: 1.0200 - val_reconstruction_loss: 0.3396 - val_total_loss: 0.4416 - learning_rate: 1.5625e-05
+Epoch 76/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 12s 19ms/step - kl_loss: 1.0361 - reconstruction_loss: 0.3731 - total_loss: 0.4767 - val_kl_loss: 1.0318 - val_reconstruction_loss: 0.3377 - val_total_loss: 0.4409 - learning_rate: 1.5625e-05
+Epoch 77/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 12s 18ms/step - kl_loss: 1.0432 - reconstruction_loss: 0.3720 - total_loss: 0.4764 - val_kl_loss: 1.0275 - val_reconstruction_loss: 0.3381 - val_total_loss: 0.4409 - learning_rate: 1.5625e-05
+Epoch 78/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 0s 16ms/step - kl_loss: 1.0413 - reconstruction_loss: 0.3726 - total_loss: 0.4768
+Epoch 78: ReduceLROnPlateau reducing learning rate to 1e-05.
+639/639 ━━━━━━━━━━━━━━━━━━━━ 13s 19ms/step - kl_loss: 1.0413 - reconstruction_loss: 0.3726 - total_loss: 0.4768 - val_kl_loss: 1.0290 - val_reconstruction_loss: 0.3377 - val_total_loss: 0.4406 - learning_rate: 1.5625e-05
+Epoch 79/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 14s 22ms/step - kl_loss: 1.0416 - reconstruction_loss: 0.3718 - total_loss: 0.4760 - val_kl_loss: 1.0267 - val_reconstruction_loss: 0.3387 - val_total_loss: 0.4414 - learning_rate: 1.0000e-05
+Epoch 80/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 13s 19ms/step - kl_loss: 1.0391 - reconstruction_loss: 0.3733 - total_loss: 0.4772 - val_kl_loss: 1.0248 - val_reconstruction_loss: 0.3384 - val_total_loss: 0.4408 - learning_rate: 1.0000e-05
+Epoch 81/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 12s 19ms/step - kl_loss: 1.0344 - reconstruction_loss: 0.3727 - total_loss: 0.4761 - val_kl_loss: 1.0186 - val_reconstruction_loss: 0.3388 - val_total_loss: 0.4407 - learning_rate: 1.0000e-05
+Epoch 82/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 13s 19ms/step - kl_loss: 1.0315 - reconstruction_loss: 0.3742 - total_loss: 0.4773 - val_kl_loss: 1.0178 - val_reconstruction_loss: 0.3385 - val_total_loss: 0.4403 - learning_rate: 1.0000e-05
+Epoch 83/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 12s 19ms/step - kl_loss: 1.0342 - reconstruction_loss: 0.3748 - total_loss: 0.4782 - val_kl_loss: 1.0227 - val_reconstruction_loss: 0.3399 - val_total_loss: 0.4421 - learning_rate: 1.0000e-05
+Epoch 84/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 13s 20ms/step - kl_loss: 1.0372 - reconstruction_loss: 0.3735 - total_loss: 0.4772 - val_kl_loss: 1.0276 - val_reconstruction_loss: 0.3392 - val_total_loss: 0.4419 - learning_rate: 1.0000e-05
+Epoch 85/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 14s 21ms/step - kl_loss: 1.0401 - reconstruction_loss: 0.3735 - total_loss: 0.4775 - val_kl_loss: 1.0297 - val_reconstruction_loss: 0.3380 - val_total_loss: 0.4410 - learning_rate: 1.0000e-05
+Epoch 86/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 13s 20ms/step - kl_loss: 1.0440 - reconstruction_loss: 0.3729 - total_loss: 0.4773 - val_kl_loss: 1.0327 - val_reconstruction_loss: 0.3384 - val_total_loss: 0.4417 - learning_rate: 1.0000e-05
+Epoch 87/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 12s 19ms/step - kl_loss: 1.0462 - reconstruction_loss: 0.3722 - total_loss: 0.4768 - val_kl_loss: 1.0329 - val_reconstruction_loss: 0.3381 - val_total_loss: 0.4413 - learning_rate: 1.0000e-05
+Epoch 88/200
+639/639 ━━━━━━━━━━━━━━━━━━━━ 12s 18ms/step - kl_loss: 1.0448 - reconstruction_loss: 0.3721 - total_loss: 0.4766 - val_kl_loss: 1.0332 - val_reconstruction_loss: 0.3371 - val_total_loss: 0.4405 - learning_rate: 1.0000e-05
+  ✦ Huấn luyện VAE hoàn tất!
+
+[STEP 5] Tính Reconstruction Error và xác định Threshold...
+  → RE Normal Train  : mean=0.053381, max=0.340128
+  → RE Normal Val    : mean=0.048401, max=0.377399
+  → RE Malicious     : mean=0.188134, max=0.302893
+
+  ★ THRESHOLD (max loss Normal Val) = 0.112053
+
+  ✦ VAE - F1 Score (weighted): 0.9596
+  ✦ Classification Report:
+              precision    recall  f1-score   support
+
+      Normal     1.0000    0.9500    0.9744     10219
+   Malicious     0.5105    1.0000    0.6760       533
+
+    accuracy                         0.9525     10752
+   macro avg     0.7553    0.9750    0.8252     10752
+weighted avg     0.9757    0.9525    0.9596     10752
+
+
+[STEP 6] Xuất 5 biểu đồ chuyên nghiệp...
+  ✓ Đã lưu: 01_training_validation_loss.png
+  ✓ Đã lưu: 02_reconstruction_error_histogram.png
+  ✓ Đã lưu: 03_confusion_matrix_isolation_forest.png
+  ✓ Đã lưu: 04_confusion_matrix_vae.png
+  ✓ Đã lưu: 05_roc_curve_comparison.png
+
+======================================================================
+  TỔNG KẾT KẾT QUẢ
+======================================================================
+
+  ┌──────────────────────┬──────────────────┬──────────────────┐
+  │      Chỉ số          │ Isolation Forest │       VAE        │
+  ├──────────────────────┼──────────────────┼──────────────────┤
+  │  F1 Score (weighted) │     0.9419       │     0.9596       │
+  │  AUC                 │     0.9852       │     0.9854       │
+  │  True Positive       │       101        │       533        │
+  │  False Positive      │        67        │       511        │
+  │  True Negative       │     10152        │      9708        │
+  │  False Negative      │       432        │         0        │
+  └──────────────────────┴──────────────────┴──────────────────┘
+
+  ★ KẾT LUẬN: VAE (Deep Learning) vượt trội hơn Isolation Forest (ML truyền thống)
+    trong việc phát hiện tấn công Credential Stuffing trên hệ thống LMS Moodle.
+
+  📁 Tất cả biểu đồ đã được lưu tại: C:\Users\ASUS\Downloads\graduation project\charts
+======================================================================
+
+[STEP 7] Đang lưu mô hình và cấu hình phục vụ SOAR...
+  ✓ Đã lưu MinMaxScaler tại: C:\Users\ASUS\Downloads\graduation project\deploy_models\minmax_scaler.pkl
+  ✓ Đã lưu Isolation Forest tại: C:\Users\ASUS\Downloads\graduation project\deploy_models\isolation_forest.pkl
+  ✓ Đã lưu VAE Encoder tại: C:\Users\ASUS\Downloads\graduation project\deploy_models\vae_encoder.keras
+  ✓ Đã lưu VAE Decoder tại: C:\Users\ASUS\Downloads\graduation project\deploy_models\vae_decoder.keras
+  ✓ Đã lưu cấu hình ngưỡng SOAR tại: C:\Users\ASUS\Downloads\graduation project\deploy_models\soar_config.json
+======================================================================
+PS C:\Users\ASUS\Downloads\graduation project> python soar_simulation.py
+==========================================================================
+     HỆ THỐNG SOAR PHÁT HIỆN & PHẢN ỨNG TỰ ĐỘNG CREDENTIAL STUFFING
+==========================================================================
+
+[*] Đang nạp các mô hình học máy và cấu hình SOAR...
+[✓] Nạp mô hình thành công!
+    - Ngưỡng VAE Threshold: 0.112053
+    - Các đặc trưng giám sát: ['req_per_IP_5min', 'error_ratio_per_IP', 'unique_UA_per_IP', 'size', 'time_gap_per_IP', 'req_regularity_per_IP', 'hour_of_day']
+
+[*] Đang nạp tập dữ liệu log để giả lập live stream...
+C:\Users\ASUS\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\numpy\_core\fromnumeric.py:57: FutureWarning: 'DataFrame.swapaxes' is deprecated and will be removed in a future version. Please use 'DataFrame.transpose' instead.
+  return bound(*args, **kwds)
+[✓] Đã tạo tập dữ liệu live stream gồm 10752 logs (bao gồm cả Bình thường & Tấn công).
+>>> HỆ THỐNG SOAR ĐÃ BẮT ĐẦU HOẠT ĐỘNG. ĐANG QUÉT LIVE TRAFFIC LOGS... <<<
+
+[*] Cấu hình Concept Drift:
+    - Chế độ Mùa cao điểm (is_high_traffic_season): False
+    - Cơ chế Ngưỡng thích ứng (EMA Adaptive Threshold): ĐÃ BẬT
+
+[2019-01-22 05:02:55] IP 66.249.66.91    | VAE MAE: 0.013627 | STATUS: ✅ Normal Request
+[2019-01-22 04:15:49] IP 86.55.46.218    | VAE MAE: 0.036794 | STATUS: ✅ Normal Request
+[2019-01-22 04:18:36] IP 80.210.245.49   | VAE MAE: 0.040045 | STATUS: ✅ Normal Request
+[2019-01-22 06:27:41] IP 66.249.66.91    | VAE MAE: 0.034389 | STATUS: ✅ Normal Request
+[2019-01-22 06:00:37] IP 83.121.196.28   | VAE MAE: 0.039008 | STATUS: ✅ Normal Request
+[2019-01-22 05:49:08] IP 91.99.72.15     | VAE MAE: 0.082741 | STATUS: ✅ Normal Request
+[2019-01-22 04:53:32] IP 66.249.66.91    | VAE MAE: 0.039964 | STATUS: ✅ Normal Request
+[2019-01-22 05:32:15] IP 66.249.66.91    | VAE MAE: 0.022918 | STATUS: ✅ Normal Request
+[2019-01-22 04:01:10] IP 83.123.86.60    | VAE MAE: 0.040170 | STATUS: ✅ Normal Request
+[2019-01-22 04:18:52] IP 86.55.46.218    | VAE MAE: 0.065455 | STATUS: ✅ Normal Request
+[2019-01-22 05:04:48] IP 103.22.4.9      | VAE MAE: 0.242794 | STATUS: 🚨 CRITICAL ANOMALY!
+  ↳ [!] Phát hiện hành vi Credential Stuffing (Low & Slow) với độ đều đặn cao.
+  [🛡️ SOAR PLAYBOOK ACTIVATED - INCIDENT CONTAINMENT (TIER 1)]
+    - [API] Đang gọi Firewall API (Lần thử 1/3)...
+    - [API] Đang gọi Moodle API (Lần thử 1/3)...
+    - Step 1: API Firewall API thành công: Đã gửi lệnh chặn tới Firewall API cho payload {'ip': '103.22.4.9', 'action': 'block'}
+    - Step 2: API Moodle API thành công: Đã gửi lệnh chặn tới Moodle API cho payload {'ip': '103.22.4.9', 'action': 'lock_user'}
+    - Step 3: Gửi báo động khẩn cấp tới kênh Slack #soc-critical-alerts
+    - Step 4: Ghi nhận sự kiện vào file soar_security_events.log
+  [✓] Playbook kết thúc thành công. IP 103.22.4.9 đã bị cách ly!
+
+[2019-01-22 04:34:09] IP 66.249.66.91    | VAE MAE: 0.060541 | STATUS: ✅ Normal Request
+[2019-01-22 06:47:22] IP 66.249.66.91    | VAE MAE: 0.018133 | STATUS: ✅ Normal Request
+[2019-01-22 06:18:11] IP 91.99.72.15     | VAE MAE: 0.083451 | STATUS: ✅ Normal Request
+[2019-01-22 05:27:22] IP 66.249.66.91    | VAE MAE: 0.008401 | STATUS: ✅ Normal Request
+[2019-01-22 05:19:31] IP 91.99.72.15     | VAE MAE: 0.091134 | STATUS: ✅ Normal Request
+[2019-01-22 05:03:58] IP 103.22.4.50     | VAE MAE: 0.209533 | STATUS: 🚨 CRITICAL ANOMALY!
+  ↳ [!] Phát hiện hành vi Credential Stuffing (Low & Slow) với độ đều đặn cao.
+  [🛡️ SOAR PLAYBOOK ACTIVATED - INCIDENT CONTAINMENT (TIER 1)]
+    - [API] Đang gọi Firewall API (Lần thử 1/3)...
+    - [API] Đang gọi Moodle API (Lần thử 1/3)...
+    - Step 1: API Firewall API thành công: Đã gửi lệnh chặn tới Firewall API cho payload {'ip': '103.22.4.50', 'action': 'block'}
+    - Step 2: API Moodle API thành công: Đã gửi lệnh chặn tới Moodle API cho payload {'ip': '103.22.4.50', 'action': 'lock_user'}
+    - Step 3: Gửi báo động khẩn cấp tới kênh Slack #soc-critical-alerts
+    - Step 4: Ghi nhận sự kiện vào file soar_security_events.log
+  [✓] Playbook kết thúc thành công. IP 103.22.4.50 đã bị cách ly!
+
+[2019-01-22 05:04:19] IP 103.22.4.5      | VAE MAE: 0.170003 | STATUS: 🚨 CRITICAL ANOMALY!
+  ↳ [!] Phát hiện hành vi Credential Stuffing (Low & Slow) với độ đều đặn cao.
+  [🛡️ SOAR PLAYBOOK ACTIVATED - INCIDENT CONTAINMENT (TIER 1)]
+    - [API] Đang gọi Firewall API (Lần thử 1/3)...
+    - [API] Đang gọi Moodle API (Lần thử 1/3)...
+    - Step 1: API Firewall API thành công: Đã gửi lệnh chặn tới Firewall API cho payload {'ip': '103.22.4.5', 'action': 'block'}
+    - Step 2: API Moodle API thành công: Đã gửi lệnh chặn tới Moodle API cho payload {'ip': '103.22.4.5', 'action': 'lock_user'}
+    - Step 3: Gửi báo động khẩn cấp tới kênh Slack #soc-critical-alerts
+    - Step 4: Ghi nhận sự kiện vào file soar_security_events.log
+  [✓] Playbook kết thúc thành công. IP 103.22.4.5 đã bị cách ly!
+
+[2019-01-22 05:19:18] IP 89.34.138.6     | VAE MAE: 0.003193 | STATUS: ✅ Normal Request
+[2019-01-22 05:42:56] IP 66.249.66.91    | VAE MAE: 0.011241 | STATUS: ✅ Normal Request
+[2019-01-22 04:48:01] IP 89.33.100.18    | VAE MAE: 0.039856 | STATUS: ✅ Normal Request
+[2019-01-22 05:03:20] IP 91.99.72.15     | VAE MAE: 0.076680 | STATUS: ✅ Normal Request
+[2019-01-22 04:55:41] IP 91.99.72.15     | VAE MAE: 0.112404 | STATUS: ✅ Normal Request
+[2019-01-22 04:37:17] IP 66.249.66.91    | VAE MAE: 0.049303 | STATUS: ✅ Normal Request
+[2019-01-22 05:01:24] IP 66.249.66.92    | VAE MAE: 0.027907 | STATUS: ✅ Normal Request
+[2019-01-22 06:51:00] IP 66.249.66.91    | VAE MAE: 0.021406 | STATUS: ✅ Normal Request
+[2019-01-22 06:43:44] IP 66.249.66.91    | VAE MAE: 0.006152 | STATUS: ✅ Normal Request
+[2019-01-22 05:48:07] IP 89.196.14.184   | VAE MAE: 0.000781 | STATUS: ✅ Normal Request
+[2019-01-22 05:09:12] IP 94.182.23.250   | VAE MAE: 0.005563 | STATUS: ✅ Normal Request
+[2019-01-22 05:33:40] IP 89.199.23.228   | VAE MAE: 0.004060 | STATUS: ✅ Normal Request
+[2019-01-22 06:47:28] IP 66.249.83.93    | VAE MAE: 0.095014 | STATUS: ✅ Normal Request
+[2019-01-22 04:59:56] IP 103.22.4.69     | VAE MAE: 0.208310 | STATUS: 🚨 CRITICAL ANOMALY!
+  ↳ [!] Phát hiện hành vi Credential Stuffing (Low & Slow) với độ đều đặn cao.
+  [🛡️ SOAR PLAYBOOK ACTIVATED - INCIDENT CONTAINMENT (TIER 1)]
+    - [API] Đang gọi Firewall API (Lần thử 1/3)...
+    ⚠️ [API LỖI] Firewall API Lần thử 1 thất bại. Chi tiết: Failed to establish connection: Connection refused
+    ↳ Đang tự động thử lại sau 0.5 giây...
+    - [API] Đang gọi Firewall API (Lần thử 2/3)...
+    - [API] Đang gọi Moodle API (Lần thử 1/3)...
+    - Step 1: API Firewall API thành công: Đã gửi lệnh chặn tới Firewall API cho payload {'ip': '103.22.4.69', 'action': 'block'}
+    - Step 2: API Moodle API thành công: Đã gửi lệnh chặn tới Moodle API cho payload {'ip': '103.22.4.69', 'action': 'lock_user'}
+    - Step 3: Gửi báo động khẩn cấp tới kênh Slack #soc-critical-alerts
+    - Step 4: Ghi nhận sự kiện vào file soar_security_events.log
+  [✓] Playbook kết thúc thành công. IP 103.22.4.69 đã bị cách ly!
+
+[2019-01-22 06:28:46] IP 66.249.66.91    | VAE MAE: 0.028101 | STATUS: ✅ Normal Request
+[2019-01-22 05:06:12] IP 77.111.247.106  | VAE MAE: 0.068270 | STATUS: ✅ Normal Request
+[2019-01-22 05:52:17] IP 95.216.11.34    | VAE MAE: 0.019122 | STATUS: ✅ Normal Request
+[2019-01-22 06:43:05] IP 89.196.15.167   | VAE MAE: 0.064131 | STATUS: ✅ Normal Request
+[2019-01-22 06:52:39] IP 66.249.66.91    | VAE MAE: 0.014502 | STATUS: ✅ Normal Request
+[2019-01-22 05:02:44] IP 77.111.247.106  | VAE MAE: 0.015855 | STATUS: ✅ Normal Request
+[2019-01-22 05:02:02] IP 91.99.72.15     | VAE MAE: 0.084382 | STATUS: ✅ Normal Request
+[2019-01-22 06:30:19] IP 94.154.239.69   | VAE MAE: 0.042305 | STATUS: ✅ Normal Request
+[2019-01-22 06:19:43] IP 66.249.66.91    | VAE MAE: 0.042579 | STATUS: ✅ Normal Request
+[2019-01-22 05:20:23] IP 91.186.209.26   | VAE MAE: 0.003563 | STATUS: ✅ Normal Request
+[2019-01-22 05:58:04] IP 83.120.160.242  | VAE MAE: 0.023682 | STATUS: ✅ Normal Request
+[2019-01-22 05:48:35] IP 95.216.11.34    | VAE MAE: 0.010492 | STATUS: ✅ Normal Request
+[2019-01-22 05:02:02] IP 103.22.4.27     | VAE MAE: 0.152192 | STATUS: ✅ Normal Request
+[2019-01-22 04:34:09] IP 66.249.66.91    | VAE MAE: 0.061372 | STATUS: ✅ Normal Request
+[2019-01-22 04:19:34] IP 83.121.152.4    | VAE MAE: 0.045326 | STATUS: ✅ Normal Request
+[2019-01-22 05:58:39] IP 83.120.160.242  | VAE MAE: 0.015130 | STATUS: ✅ Normal Request
+[2019-01-22 06:48:44] IP 66.249.66.92    | VAE MAE: 0.063251 | STATUS: ✅ Normal Request
+[2019-01-22 06:33:40] IP 66.249.66.91    | VAE MAE: 0.002443 | STATUS: ✅ Normal Request
+[2019-01-22 05:39:32] IP 91.99.85.48     | VAE MAE: 0.032798 | STATUS: ✅ Normal Request
+[2019-01-22 04:54:23] IP 66.249.66.91    | VAE MAE: 0.040408 | STATUS: ✅ Normal Request
+[2019-01-22 05:03:33] IP 66.249.66.92    | VAE MAE: 0.020683 | STATUS: ✅ Normal Request
+[2019-01-22 05:10:37] IP 91.99.72.15     | VAE MAE: 0.085728 | STATUS: ✅ Normal Request
+[2019-01-22 05:33:29] IP 86.107.147.16   | VAE MAE: 0.021226 | STATUS: ✅ Normal Request
+[2019-01-22 05:33:31] IP 86.107.147.16   | VAE MAE: 0.004480 | STATUS: ✅ Normal Request
+[2019-01-22 05:40:58] IP 66.249.66.91    | VAE MAE: 0.011778 | STATUS: ✅ Normal Request
+[2019-01-22 05:15:12] IP 83.120.67.174   | VAE MAE: 0.004429 | STATUS: ✅ Normal Request
+[2019-01-22 05:16:22] IP 89.199.115.156  | VAE MAE: 0.020919 | STATUS: ✅ Normal Request
+[2019-01-22 06:48:31] IP 67.220.189.154  | VAE MAE: 0.044659 | STATUS: ✅ Normal Request
+[2019-01-22 05:00:57] IP 103.22.4.186    | VAE MAE: 0.210759 | STATUS: 🚨 CRITICAL ANOMALY!
+  ↳ [!] Phát hiện hành vi Credential Stuffing (Low & Slow) với độ đều đặn cao.
+  [🛡️ SOAR PLAYBOOK ACTIVATED - INCIDENT CONTAINMENT (TIER 1)]
+    - [API] Đang gọi Firewall API (Lần thử 1/3)...
+    - [API] Đang gọi Moodle API (Lần thử 1/3)...
+    - Step 1: API Firewall API thành công: Đã gửi lệnh chặn tới Firewall API cho payload {'ip': '103.22.4.186', 'action': 'block'}
+    - Step 2: API Moodle API thành công: Đã gửi lệnh chặn tới Moodle API cho payload {'ip': '103.22.4.186', 'action': 'lock_user'}
+    - Step 3: Gửi báo động khẩn cấp tới kênh Slack #soc-critical-alerts
+    - Step 4: Ghi nhận sự kiện vào file soar_security_events.log
+  [✓] Playbook kết thúc thành công. IP 103.22.4.186 đã bị cách ly!
+
+[2019-01-22 05:59:49] IP 66.249.66.91    | VAE MAE: 0.010359 | STATUS: ✅ Normal Request
+[2019-01-22 05:35:41] IP 66.249.66.91    | VAE MAE: 0.022377 | STATUS: ✅ Normal Request
+[2019-01-22 03:59:19] IP 95.81.118.56    | VAE MAE: 0.075469 | STATUS: ✅ Normal Request
+[2019-01-22 06:40:53] IP 89.196.15.167   | VAE MAE: 0.048381 | STATUS: ✅ Normal Request
+[2019-01-22 05:39:54] IP 91.99.85.48     | VAE MAE: 0.004445 | STATUS: ✅ Normal Request
+[2019-01-22 04:38:07] IP 91.99.72.15     | VAE MAE: 0.111196 | STATUS: ✅ Normal Request
+[2019-01-22 04:21:04] IP 93.110.206.139  | VAE MAE: 0.045297 | STATUS: ✅ Normal Request
+[2019-01-22 05:59:38] IP 66.249.66.91    | VAE MAE: 0.009897 | STATUS: ✅ Normal Request
+[2019-01-22 06:17:23] IP 66.249.66.91    | VAE MAE: 0.030678 | STATUS: ✅ Normal Request
+[2019-01-22 06:41:21] IP 66.249.66.91    | VAE MAE: 0.004171 | STATUS: ✅ Normal Request
+[2019-01-22 05:57:42] IP 91.99.72.15     | VAE MAE: 0.079149 | STATUS: ✅ Normal Request
+[2019-01-22 03:58:11] IP 91.99.72.15     | VAE MAE: 0.153990 | STATUS: ✅ Normal Request
+[2019-01-22 05:39:29] IP 66.249.66.91    | VAE MAE: 0.027941 | STATUS: ✅ Normal Request
+[2019-01-22 05:55:41] IP 66.249.66.91    | VAE MAE: 0.019331 | STATUS: ✅ Normal Request
+[2019-01-22 04:36:17] IP 93.110.220.181  | VAE MAE: 0.064249 | STATUS: ✅ Normal Request
+[2019-01-22 06:44:16] IP 91.133.134.130  | VAE MAE: 0.039644 | STATUS: ✅ Normal Request
+[2019-01-22 05:55:10] IP 95.216.11.34    | VAE MAE: 0.020978 | STATUS: ✅ Normal Request
+[2019-01-22 05:51:51] IP 95.216.11.34    | VAE MAE: 0.019573 | STATUS: ✅ Normal Request
+[2019-01-22 04:37:02] IP 93.110.220.181  | VAE MAE: 0.085771 | STATUS: ✅ Normal Request
+[2019-01-22 04:36:42] IP 93.110.220.181  | VAE MAE: 0.075262 | STATUS: ✅ Normal Request
+[2019-01-22 05:27:48] IP 79.127.7.174    | VAE MAE: 0.004632 | STATUS: ✅ Normal Request
+[2019-01-22 06:13:05] IP 66.249.66.91    | VAE MAE: 0.010883 | STATUS: ✅ Normal Request
+[2019-01-22 05:28:21] IP 66.249.66.91    | VAE MAE: 0.009294 | STATUS: ✅ Normal Request
+[2019-01-22 04:57:01] IP 103.22.4.125    | VAE MAE: 0.188117 | STATUS: 🚨 CRITICAL ANOMALY!
+  ↳ [!] Phát hiện hành vi Credential Stuffing (Low & Slow) với độ đều đặn cao.
+  [🛡️ SOAR PLAYBOOK ACTIVATED - INCIDENT CONTAINMENT (TIER 1)]
+    - [API] Đang gọi Firewall API (Lần thử 1/3)...
+    - [API] Đang gọi Moodle API (Lần thử 1/3)...
+    - Step 1: API Firewall API thành công: Đã gửi lệnh chặn tới Firewall API cho payload {'ip': '103.22.4.125', 'action': 'block'}
+    - Step 2: API Moodle API thành công: Đã gửi lệnh chặn tới Moodle API cho payload {'ip': '103.22.4.125', 'action': 'lock_user'}
+    - Step 3: Gửi báo động khẩn cấp tới kênh Slack #soc-critical-alerts
+    - Step 4: Ghi nhận sự kiện vào file soar_security_events.log
+  [✓] Playbook kết thúc thành công. IP 103.22.4.125 đã bị cách ly!
+
+[2019-01-22 05:40:42] IP 91.99.72.15     | VAE MAE: 0.068915 | STATUS: ✅ Normal Request
+[2019-01-22 06:49:24] IP 66.249.66.91    | VAE MAE: 0.024938 | STATUS: ✅ Normal Request
+
+[!] Đang dừng hệ thống SOAR...
+
+==========================================================================
+               HỆ THỐNG SOAR ĐÃ DỪNG HOẠT ĐỘNG AN TOÀN
+   Tổng số IP bị chặn tự động trong phiên: 6
+   Blocklist IP: ['103.22.4.125', '103.22.4.50', '103.22.4.9', '103.22.4.186', '103.22.4.69', '103.22.4.5']
+==========================================================================
+PS C:\Users\ASUS\Downloads\graduation project> python soar_web_app.py
+C:\Users\ASUS\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\numpy\_core\fromnumeric.py:57: FutureWarning: 'DataFrame.swapaxes' is deprecated and will be removed in a future version. Please use 'DataFrame.transpose' instead.
+  return bound(*args, **kwds)
+[✓] Mô hình AI và dữ liệu log đã được nạp thành công vào SOAR!
+
+=======================================================
+ HỆ THỐNG SOAR TRỰC QUAN ĐÃ SẴN SÀNG KHỞI CHẠY!
+ 👉 Mở trình duyệt truy cập: http://127.0.0.1:5000
+=======================================================
+
+ * Serving Flask app 'soar_web_app'
+ * Debug mode: off
+WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
+ * Running on http://127.0.0.1:5000
+Press CTRL+C to quit
+PS C:\Users\ASUS\Downloads\graduation project>

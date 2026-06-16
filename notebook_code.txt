@@ -1,0 +1,735 @@
+=== Cell 2 ===
+import os
+import sys
+import warnings
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+from sklearn.preprocessing import MinMaxScaler, LabelEncoder
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import IsolationForest
+from sklearn.metrics import (
+    confusion_matrix, classification_report,
+    f1_score, roc_curve, auc
+)
+
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers, Model
+from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
+
+# Fix encoding cho Windows
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
+warnings.filterwarnings('ignore')
+np.random.seed(42)
+tf.random.set_seed(42)
+
+# Hiển thị biểu đồ inline
+%matplotlib inline
+
+print('\u2705 Tất cả thư viện đã được import thành công!')
+print(f'   TensorFlow version: {tf.__version__}')
+print(f'   NumPy version: {np.__version__}')
+print(f'   Pandas version: {pd.__version__}')
+
+=== Cell 4 ===
+# Thư mục lưu biểu đồ
+SAVE_DIR = 'charts'
+os.makedirs(SAVE_DIR, exist_ok=True)
+
+# Màu sắc chuyên nghiệp
+COLOR_NORMAL    = '#00d2ff'   # Cyan sáng
+COLOR_MALICIOUS = '#e94560'   # Đỏ san hô
+COLOR_THRESHOLD = '#f5a623'   # Vàng cam
+COLOR_IF        = '#7b68ee'   # Tím nhạt (Isolation Forest)
+COLOR_VAE       = '#00e396'   # Xanh lá neon (VAE)
+BG_DARK         = '#1a1a2e'
+BG_AXES         = '#16213e'
+
+# Cấu hình matplotlib style
+plt.rcParams.update({
+    'figure.facecolor': BG_DARK,
+    'axes.facecolor': BG_AXES,
+    'axes.edgecolor': '#e94560',
+    'axes.labelcolor': '#eee',
+    'text.color': '#eee',
+    'xtick.color': '#aaa',
+    'ytick.color': '#aaa',
+    'grid.color': '#333',
+    'font.size': 12,
+    'axes.titlesize': 14,
+    'figure.titlesize': 16,
+})
+
+print('\u2705 Cấu hình biểu đồ hoàn tất!')
+
+=== Cell 6 ===
+# Đọc file CSV
+df = pd.read_csv('lms_training_dataset_final.csv')
+
+# Convert timestamp to datetime
+df['timestamp'] = pd.to_datetime(df['timestamp'])
+
+# Sort by ip and timestamp
+df = df.sort_values(by=['ip', 'timestamp']).reset_index(drop=True)
+
+print('=' * 60)
+print('  THONG TIN DU LIEU (DA SAP XEP CHRONOLOGICAL)')
+print('=' * 60)
+print(f'  Tong so mau      : {len(df)}')
+print(f'  Normal  (Label 0): {len(df[df["Label"] == 0])}')
+print(f'  Malicious (Label 1): {len(df[df["Label"] == 1])}')
+print(f'  Cac cot          : {list(df.columns)}')
+print('=' * 60)
+
+df.head(10)
+
+=== Cell 7 ===
+# Thong ke mo ta
+df.describe()
+
+=== Cell 8 ===
+# Ma hoa cot IP bang LabelEncoder
+le_ip = LabelEncoder()
+df['ip_encoded'] = le_ip.fit_transform(df['ip'])
+
+# FEATURE ENGINEERING: Tao them 3 features moi
+print('Calculating feature engineering...')
+# 1 & 2. Time gap per IP & regularity per IP (std of time gaps in 5-min window)
+df['time_gap'] = df.groupby('ip')['timestamp'].diff().dt.total_seconds().fillna(300.0)
+
+df_idx = df.set_index('timestamp')
+mean_gap = df_idx.groupby('ip')['time_gap'].rolling('5min', min_periods=1).mean().reset_index()
+std_gap = df_idx.groupby('ip')['time_gap'].rolling('5min', min_periods=1).std().reset_index()
+
+df['time_gap_per_IP'] = mean_gap['time_gap'].values
+df['req_regularity_per_IP'] = std_gap['time_gap'].fillna(300.0).values
+
+# 3. hour_of_day
+df['hour_of_day'] = df['timestamp'].dt.hour
+
+# Chon Features so hoc de huan luyen (DA XOA ip_encoded DE TRANH NHIEU TRONG MANG NO-RON)
+FEATURE_COLS = [
+    'req_per_IP_5min', 
+    'error_ratio_per_IP',
+    'unique_UA_per_IP', 
+    'size',
+    'time_gap_per_IP', 
+    'req_regularity_per_IP', 
+    'hour_of_day'
+]
+
+X = df[FEATURE_COLS].values.astype(np.float32)
+y = df['Label'].values
+
+# Chuan hoa Min-Max [0, 1]
+scaler = MinMaxScaler()
+X_scaled = scaler.fit_transform(X)
+
+print(f'Features da chon : {FEATURE_COLS}')
+print(f'Shape sau chuan hoa: {X_scaled.shape}')
+print(f'Min values: {X_scaled.min(axis=0)}')
+print(f'Max values: {X_scaled.max(axis=0)}')
+
+=== Cell 10 ===
+# Tach rieng Normal va Malicious
+normal_mask = (y == 0)
+malicious_mask = (y == 1)
+
+X_normal = X_scaled[normal_mask]
+X_malicious = X_scaled[malicious_mask]
+y_normal = y[normal_mask]
+y_malicious = y[malicious_mask]
+
+# Chia Normal thanh 80% Train, 20% Validation
+X_normal_train, X_normal_val = train_test_split(
+    X_normal, test_size=0.2, random_state=42
+)
+
+# Tap Test = toan bo Malicious
+X_test = X_malicious
+y_test = y_malicious
+
+# Tap Evaluation (Validation + Test)
+X_eval = np.vstack([X_normal_val, X_test])
+y_eval = np.concatenate([
+    np.zeros(len(X_normal_val)),   # Normal
+    np.ones(len(X_test))           # Malicious
+])
+
+print('=' * 50)
+print('  KET QUA CHIA DU LIEU')
+print('=' * 50)
+print(f'  Normal Train   : {X_normal_train.shape[0]:>6} mau')
+print(f'  Normal Val     : {X_normal_val.shape[0]:>6} mau')
+print(f'  Malicious Test : {X_test.shape[0]:>6} mau')
+print(f'  Evaluation Set : {X_eval.shape[0]:>6} mau (Val + Test)')
+print('=' * 50)
+
+=== Cell 12 ===
+# Ti le di thuong thuc te (chong FP cao)
+contamination_ratio = len(X_malicious) / len(X_scaled)
+print(f'Contamination ratio (True anomaly ratio): {contamination_ratio:.6f}')
+
+# Khoi tao va huan luyen Isolation Forest
+iso_forest = IsolationForest(
+    n_estimators=200,
+    contamination=contamination_ratio,
+    random_state=42,
+    n_jobs=-1
+)
+
+# Huan luyen tren tap Normal Train (chong data leakage)
+iso_forest.fit(X_normal_train)
+
+# Du doan tren tap Evaluation (Validation + Test)
+iso_pred_raw = iso_forest.predict(X_eval)
+# Chuyen doi: -1 -> 1 (Malicious), 1 -> 0 (Normal)
+iso_pred = np.where(iso_pred_raw == -1, 1, 0)
+
+# Anomaly score (cang am = cang di thuong)
+iso_scores = -iso_forest.decision_function(X_eval)
+
+print('\nHuan luyen Isolation Forest hoan tat!')
+
+=== Cell 13 ===
+# Danh gia Isolation Forest
+iso_f1 = f1_score(y_eval, iso_pred, average='weighted')
+iso_cm = confusion_matrix(y_eval, iso_pred)
+
+print('=' * 55)
+print('  DANH GIA ISOLATION FOREST (BASELINE)')
+print('=' * 55)
+print(f'  F1 Score (weighted): {iso_f1:.4f}')
+print()
+print(classification_report(y_eval, iso_pred,
+                            target_names=['Normal', 'Malicious'],
+                            digits=4))
+print('Confusion Matrix:')
+print(iso_cm)
+
+=== Cell 15 ===
+input_dim = X_normal_train.shape[1]
+latent_dim = 8  # Khong gian tiem an 8D
+
+print(f'Input dimension : {input_dim}')
+print(f'Latent dimension: {latent_dim}')
+
+
+# ---- Lop Sampling cho Latent Space ----
+class Sampling(layers.Layer):
+    """Lop lay mau z = mu + sigma * epsilon (Reparameterization trick)"""
+    def call(self, inputs):
+        z_mean, z_log_var = inputs
+        batch = tf.shape(z_mean)[0]
+        dim = tf.shape(z_mean)[1]
+        epsilon = tf.random.normal(shape=(batch, dim))
+        return z_mean + tf.exp(0.5 * z_log_var) * epsilon
+
+=== Cell 16 ===
+# ============ ENCODER ============
+encoder_inputs = keras.Input(shape=(input_dim,), name='encoder_input')
+x = layers.Dense(64, activation='relu', name='enc_dense1')(encoder_inputs)
+x = layers.BatchNormalization(name='enc_bn1')(x)
+x = layers.Dense(32, activation='relu', name='enc_dense2')(x)
+x = layers.BatchNormalization(name='enc_bn2')(x)
+x = layers.Dense(16, activation='relu', name='enc_dense3')(x)
+
+z_mean = layers.Dense(latent_dim, name='z_mean')(x)
+z_log_var = layers.Dense(latent_dim, name='z_log_var')(x)
+z = Sampling(name='sampling')([z_mean, z_log_var])
+
+encoder = Model(encoder_inputs, [z_mean, z_log_var, z], name='encoder')
+encoder.summary()
+
+=== Cell 17 ===
+# ============ DECODER ============
+decoder_inputs = keras.Input(shape=(latent_dim,), name='decoder_input')
+x = layers.Dense(16, activation='relu', name='dec_dense1')(decoder_inputs)
+x = layers.BatchNormalization(name='dec_bn1')(x)
+x = layers.Dense(32, activation='relu', name='dec_dense2')(x)
+x = layers.BatchNormalization(name='dec_bn2')(x)
+x = layers.Dense(64, activation='relu', name='dec_dense3')(x)
+decoder_outputs = layers.Dense(input_dim, activation='sigmoid', name='dec_output')(x)
+
+decoder = Model(decoder_inputs, decoder_outputs, name='decoder')
+decoder.summary()
+
+=== Cell 18 ===
+# ============ VAE MODEL ============
+class VAE(Model):
+    def __init__(self, encoder, decoder, beta=0.1, **kwargs):
+        super().__init__(**kwargs)
+        self.encoder = encoder
+        self.decoder = decoder
+        self.beta = beta
+        self.total_loss_tracker = keras.metrics.Mean(name='total_loss')
+        self.reconstruction_loss_tracker = keras.metrics.Mean(name='reconstruction_loss')
+        self.kl_loss_tracker = keras.metrics.Mean(name='kl_loss')
+
+    @property
+    def metrics(self):
+        return [
+            self.total_loss_tracker,
+            self.reconstruction_loss_tracker,
+            self.kl_loss_tracker,
+        ]
+
+    def train_step(self, data):
+        with tf.GradientTape() as tape:
+            z_mean, z_log_var, z = self.encoder(data)
+            reconstruction = self.decoder(z)
+            # Reconstruction loss (MAE) - No double reduction
+            reconstruction_loss = tf.reduce_mean(
+                tf.reduce_sum(
+                    tf.abs(data - reconstruction),
+                    axis=1
+                )
+            )
+            # KL Divergence loss
+            kl_loss = -0.5 * tf.reduce_mean(
+                tf.reduce_sum(
+                    1 + z_log_var - tf.square(z_mean) - tf.exp(z_log_var),
+                    axis=1,
+                )
+            )
+            total_loss = reconstruction_loss + self.beta * kl_loss
+
+        grads = tape.gradient(total_loss, self.trainable_weights)
+        self.optimizer.apply_gradients(zip(grads, self.trainable_weights))
+
+        self.total_loss_tracker.update_state(total_loss)
+        self.reconstruction_loss_tracker.update_state(reconstruction_loss)
+        self.kl_loss_tracker.update_state(kl_loss)
+
+        return {
+            'total_loss': self.total_loss_tracker.result(),
+            'reconstruction_loss': self.reconstruction_loss_tracker.result(),
+            'kl_loss': self.kl_loss_tracker.result(),
+        }
+
+    def test_step(self, data):
+        z_mean, z_log_var, z = self.encoder(data)
+        reconstruction = self.decoder(z)
+        # Reconstruction loss (MAE) - No double reduction
+        reconstruction_loss = tf.reduce_mean(
+            tf.reduce_sum(
+                tf.abs(data - reconstruction),
+                axis=1
+            )
+        )
+        kl_loss = -0.5 * tf.reduce_mean(
+            tf.reduce_sum(
+                1 + z_log_var - tf.square(z_mean) - tf.exp(z_log_var),
+                axis=1,
+            )
+        )
+        total_loss = reconstruction_loss + self.beta * kl_loss
+
+        self.total_loss_tracker.update_state(total_loss)
+        self.reconstruction_loss_tracker.update_state(reconstruction_loss)
+        self.kl_loss_tracker.update_state(kl_loss)
+
+        return {
+            'total_loss': self.total_loss_tracker.result(),
+            'reconstruction_loss': self.reconstruction_loss_tracker.result(),
+            'kl_loss': self.kl_loss_tracker.result(),
+        }
+
+
+print('VAE class da duoc dinh nghia thanh cong!')
+
+=== Cell 19 ===
+# Khoi tao va bien dich VAE (kem theo beta=0.1)
+vae = VAE(encoder, decoder, beta=0.1)
+vae.compile(optimizer=keras.optimizers.Adam(learning_rate=1e-3))
+
+# Callback Early Stopping
+early_stop = EarlyStopping(
+    monitor='val_total_loss',
+    patience=15,
+    restore_best_weights=True,
+    mode='min'
+)
+
+# Callback ReduceLROnPlateau
+from tensorflow.keras.callbacks import ReduceLROnPlateau
+reduce_lr = ReduceLROnPlateau(
+    monitor='val_total_loss',
+    factor=0.5,
+    patience=5,
+    min_lr=1e-5,
+    mode='min',
+    verbose=1
+)
+
+print(f'Bat dau huan luyen VAE tren {X_normal_train.shape[0]} mau Normal...')
+print(f'Validation: {X_normal_val.shape[0]} mau Normal')
+
+=== Cell 20 ===
+# ============ HUAN LUYEN VAE ============
+# CHI huan luyen tren tap Normal Train
+history = vae.fit(
+    X_normal_train,
+    epochs=200,
+    batch_size=64,
+    validation_data=(X_normal_val,),
+    callbacks=[early_stop, reduce_lr],
+    verbose=1
+)
+
+print('\nHuan luyen VAE hoan tat!')
+print(f'So epoch thuc te: {len(history.history["total_loss"])}')
+
+=== Cell 22 ===
+def compute_reconstruction_error(model, data):
+    """Tinh MAE reconstruction error cho tung mau (MAU CHO MAE LOSS)"""
+    z_mean, z_log_var, z = model.encoder(data)
+    reconstructed = model.decoder(z)
+    mae = np.mean(np.abs(data - reconstructed.numpy()), axis=1)
+    return mae
+
+
+# Tinh loi tren tung tap (dung MAE)
+re_normal_train = compute_reconstruction_error(vae, X_normal_train)
+re_normal_val   = compute_reconstruction_error(vae, X_normal_val)
+re_malicious    = compute_reconstruction_error(vae, X_test)
+
+# Reconstruction error tren toan bo tap Eval
+re_eval = np.concatenate([re_normal_val, re_malicious])
+
+# THRESHOLD = Phân vị thứ 95 của tập Normal Validation (Chấp nhận 5% sinh viên thật bị nghi ngờ để bắt trọn hacker)
+threshold = np.percentile(re_normal_val, 95)
+
+print('=' * 55)
+print('  RECONSTRUCTION ERROR ANALYSIS (MAE LOSS)')
+print('=' * 55)
+print(f'  Normal Train : mean={np.mean(re_normal_train):.6f}, max={np.max(re_normal_train):.6f}')
+print(f'  Normal Val   : mean={np.mean(re_normal_val):.6f}, max={np.max(re_normal_val):.6f}')
+print(f'  Malicious    : mean={np.mean(re_malicious):.6f}, max={np.max(re_malicious):.6f}')
+print('-' * 55)
+print(f'>>> CHOSEN 95TH PERCENTILE THRESHOLD (Normal Val) = {threshold:.6f} <<<')
+print('=' * 55)
+
+=== Cell 23 ===
+# Du doan VAE: vuot threshold -> Malicious (1)
+vae_pred = (re_eval > threshold).astype(int)
+
+# Danh gia VAE
+vae_f1 = f1_score(y_eval, vae_pred, average='weighted')
+vae_cm = confusion_matrix(y_eval, vae_pred)
+
+print('=' * 55)
+print('  DANH GIA VAE (MAIN MODEL)')
+print('=' * 55)
+print(f'  F1 Score (weighted): {vae_f1:.4f}')
+print()
+print(classification_report(y_eval, vae_pred,
+                            target_names=['Normal', 'Malicious'],
+                            digits=4))
+print('Confusion Matrix:')
+print(vae_cm)
+
+=== Cell 25 ===
+# ===== BIEU DO 1: Training & Validation Loss Curve =====
+fig1, ax1 = plt.subplots(figsize=(10, 6))
+fig1.patch.set_facecolor(BG_DARK)
+ax1.set_facecolor(BG_AXES)
+
+epochs_range = range(1, len(history.history['total_loss']) + 1)
+
+ax1.plot(epochs_range, history.history['total_loss'],
+         color=COLOR_NORMAL, linewidth=2.5, label='Training Loss',
+         marker='o', markersize=3, alpha=0.9)
+ax1.plot(epochs_range, history.history['val_total_loss'],
+         color=COLOR_MALICIOUS, linewidth=2.5, label='Validation Loss',
+         marker='s', markersize=3, alpha=0.9)
+
+ax1.set_xlabel('Epoch', fontsize=13, fontweight='bold')
+ax1.set_ylabel('Total Loss (MSE + KL)', fontsize=13, fontweight='bold')
+ax1.set_title('Bieu do 1: Duong cong hoi tu (Training & Validation Loss)',
+              fontsize=15, fontweight='bold', pad=15)
+ax1.legend(fontsize=12, loc='upper right', fancybox=True,
+           framealpha=0.8, edgecolor='#555')
+ax1.grid(True, alpha=0.3)
+
+fig1.tight_layout()
+fig1.savefig(os.path.join(SAVE_DIR, '01_training_validation_loss.png'),
+             dpi=200, bbox_inches='tight', facecolor=BG_DARK)
+plt.show()
+print('Da luu: charts/01_training_validation_loss.png')
+
+=== Cell 27 ===
+# ===== BIEU DO 2: Reconstruction Error Histogram =====
+fig2, ax2 = plt.subplots(figsize=(10, 6))
+fig2.patch.set_facecolor(BG_DARK)
+ax2.set_facecolor(BG_AXES)
+
+ax2.hist(re_normal_val, bins=80, alpha=0.75, color=COLOR_NORMAL,
+         label=f'Normal (n={len(re_normal_val)})', edgecolor='white', linewidth=0.5)
+ax2.hist(re_malicious, bins=80, alpha=0.75, color=COLOR_MALICIOUS,
+         label=f'Malicious (n={len(re_malicious)})', edgecolor='white', linewidth=0.5)
+ax2.axvline(x=threshold, color=COLOR_THRESHOLD, linestyle='--', linewidth=2.5,
+            label=f'Threshold = {threshold:.4f}')
+
+ax2.set_xlabel('Reconstruction Error (MSE)', fontsize=13, fontweight='bold')
+ax2.set_ylabel('So luong mau', fontsize=13, fontweight='bold')
+ax2.set_title('Bieu do 2: Phan phoi loi giai nen (Reconstruction Error)',
+              fontsize=15, fontweight='bold', pad=15)
+ax2.legend(fontsize=11, loc='upper right', fancybox=True,
+           framealpha=0.8, edgecolor='#555')
+ax2.grid(True, alpha=0.3)
+
+fig2.tight_layout()
+fig2.savefig(os.path.join(SAVE_DIR, '02_reconstruction_error_histogram.png'),
+             dpi=200, bbox_inches='tight', facecolor=BG_DARK)
+plt.show()
+print('Da luu: charts/02_reconstruction_error_histogram.png')
+
+=== Cell 29 ===
+# ===== BIEU DO 3: Confusion Matrix - Isolation Forest =====
+fig3, ax3 = plt.subplots(figsize=(7, 6))
+fig3.patch.set_facecolor(BG_DARK)
+
+sns.heatmap(iso_cm, annot=True, fmt='d', cmap='coolwarm',
+            xticklabels=['Normal', 'Malicious'],
+            yticklabels=['Normal', 'Malicious'],
+            annot_kws={'size': 18, 'fontweight': 'bold'},
+            linewidths=2, linecolor='#333',
+            cbar_kws={'label': 'So luong'},
+            ax=ax3)
+
+ax3.set_xlabel('Du doan (Predicted)', fontsize=13, fontweight='bold')
+ax3.set_ylabel('Thuc te (Actual)', fontsize=13, fontweight='bold')
+ax3.set_title(f'Bieu do 3: Confusion Matrix - Isolation Forest\n(F1={iso_f1:.4f})',
+              fontsize=14, fontweight='bold', pad=15)
+
+fig3.tight_layout()
+fig3.savefig(os.path.join(SAVE_DIR, '03_confusion_matrix_isolation_forest.png'),
+             dpi=200, bbox_inches='tight', facecolor=BG_DARK)
+plt.show()
+print('Da luu: charts/03_confusion_matrix_isolation_forest.png')
+
+=== Cell 31 ===
+# ===== BIEU DO 4: Confusion Matrix - VAE =====
+fig4, ax4 = plt.subplots(figsize=(7, 6))
+fig4.patch.set_facecolor(BG_DARK)
+
+sns.heatmap(vae_cm, annot=True, fmt='d', cmap='YlGnBu',
+            xticklabels=['Normal', 'Malicious'],
+            yticklabels=['Normal', 'Malicious'],
+            annot_kws={'size': 18, 'fontweight': 'bold'},
+            linewidths=2, linecolor='#333',
+            cbar_kws={'label': 'So luong'},
+            ax=ax4)
+
+ax4.set_xlabel('Du doan (Predicted)', fontsize=13, fontweight='bold')
+ax4.set_ylabel('Thuc te (Actual)', fontsize=13, fontweight='bold')
+ax4.set_title(f'Bieu do 4: Confusion Matrix - VAE\n(F1={vae_f1:.4f})',
+              fontsize=14, fontweight='bold', pad=15)
+
+fig4.tight_layout()
+fig4.savefig(os.path.join(SAVE_DIR, '04_confusion_matrix_vae.png'),
+             dpi=200, bbox_inches='tight', facecolor=BG_DARK)
+plt.show()
+print('Da luu: charts/04_confusion_matrix_vae.png')
+
+=== Cell 33 ===
+# ===== BIEU DO 5: ROC Curve - So sanh IF vs VAE =====
+fig5, ax5 = plt.subplots(figsize=(10, 8))
+fig5.patch.set_facecolor(BG_DARK)
+ax5.set_facecolor(BG_AXES)
+
+# ROC cho Isolation Forest (dung anomaly score)
+fpr_if, tpr_if, _ = roc_curve(y_eval, iso_scores)
+auc_if = auc(fpr_if, tpr_if)
+
+# ROC cho VAE (dung reconstruction error)
+fpr_vae, tpr_vae, _ = roc_curve(y_eval, re_eval)
+auc_vae = auc(fpr_vae, tpr_vae)
+
+# Duong cheo ngau nhien
+ax5.plot([0, 1], [0, 1], color='#555', linestyle='--', linewidth=1.5,
+         label='Random Classifier (AUC = 0.50)', alpha=0.7)
+
+# Duong ROC Isolation Forest
+ax5.plot(fpr_if, tpr_if, color=COLOR_IF, linewidth=3,
+         label=f'Isolation Forest (AUC = {auc_if:.4f})', alpha=0.9)
+ax5.fill_between(fpr_if, tpr_if, alpha=0.15, color=COLOR_IF)
+
+# Duong ROC VAE
+ax5.plot(fpr_vae, tpr_vae, color=COLOR_VAE, linewidth=3,
+         label=f'VAE (AUC = {auc_vae:.4f})', alpha=0.9)
+ax5.fill_between(fpr_vae, tpr_vae, alpha=0.15, color=COLOR_VAE)
+
+ax5.set_xlabel('False Positive Rate (Ty le Duong tinh gia)', fontsize=13, fontweight='bold')
+ax5.set_ylabel('True Positive Rate (Ty le phat hien dung)', fontsize=13, fontweight='bold')
+ax5.set_title('Bieu do 5: Duong cong ROC - So sanh Isolation Forest vs VAE',
+              fontsize=15, fontweight='bold', pad=15)
+ax5.legend(fontsize=12, loc='lower right', fancybox=True,
+           framealpha=0.8, edgecolor='#555')
+ax5.grid(True, alpha=0.3)
+ax5.set_xlim([-0.02, 1.02])
+ax5.set_ylim([-0.02, 1.02])
+
+fig5.tight_layout()
+fig5.savefig(os.path.join(SAVE_DIR, '05_roc_curve_comparison.png'),
+             dpi=200, bbox_inches='tight', facecolor=BG_DARK)
+plt.show()
+print('Da luu: charts/05_roc_curve_comparison.png')
+
+=== Cell 35 ===
+# ===== BIEU DO 6: Latent Space Visualization using PCA =====
+from sklearn.decomposition import PCA
+
+# 1. Project X_eval to Latent Space
+z_mean, _, _ = vae.encoder.predict(X_eval, verbose=0)
+
+# 2. Apply PCA to project 8D latent space to 2D
+pca = PCA(n_components=2, random_state=42)
+z_2d = pca.fit_transform(z_mean)
+
+# 3. Plotting
+fig6, ax6 = plt.subplots(figsize=(10, 8))
+fig6.patch.set_facecolor(BG_DARK)
+ax6.set_facecolor(BG_AXES)
+
+# Scatter plot for Normal vs Malicious
+ax6.scatter(z_2d[y_eval == 0, 0], z_2d[y_eval == 0, 1], color=COLOR_NORMAL, label='Normal (Validation)', alpha=0.6, edgecolors='none', s=25)
+ax6.scatter(z_2d[y_eval == 1, 0], z_2d[y_eval == 1, 1], color=COLOR_MALICIOUS, label='Malicious (Test - Attack)', alpha=0.8, edgecolors='none', s=35)
+
+ax6.set_xlabel('Latent Component 1', fontsize=13, fontweight='bold', color='white')
+ax6.set_ylabel('Latent Component 2', fontsize=13, fontweight='bold', color='white')
+ax6.set_title('Bieu do 6: Latent Space Visualization (8D PCA to 2D)', fontsize=15, fontweight='bold', pad=15, color='white')
+ax6.legend(fontsize=12, loc='best', fancybox=True, framealpha=0.8, edgecolor='#555')
+ax6.grid(True, alpha=0.3)
+
+fig6.tight_layout()
+fig6.savefig(os.path.join(SAVE_DIR, '06_latent_space.png'), dpi=200, bbox_inches='tight', facecolor=BG_DARK)
+plt.show()
+print('Da luu: charts/06_latent_space.png')
+
+=== Cell 37 ===
+from sklearn.metrics import precision_recall_curve, average_precision_score
+
+# Tinh PR curve cho Isolation Forest (dung anomaly score)
+precision_if, recall_if, _ = precision_recall_curve(y_eval, iso_scores)
+ap_if = average_precision_score(y_eval, iso_scores)
+
+# Tinh PR curve cho VAE (dung reconstruction error)
+precision_vae, recall_vae, _ = precision_recall_curve(y_eval, re_eval)
+ap_vae = average_precision_score(y_eval, re_eval)
+
+# ===== BIEU DO 7: Precision-Recall Curve Comparison =====
+fig7, ax7 = plt.subplots(figsize=(10, 8))
+fig7.patch.set_facecolor(BG_DARK)
+ax7.set_facecolor(BG_AXES)
+
+ax7.plot(recall_if, precision_if, color=COLOR_IF, linewidth=3,
+         label=f'Isolation Forest (AP = {ap_if:.4f})', alpha=0.9)
+ax7.fill_between(recall_if, precision_if, alpha=0.15, color=COLOR_IF)
+
+ax7.plot(recall_vae, precision_vae, color=COLOR_VAE, linewidth=3,
+         label=f'VAE (AP = {ap_vae:.4f})', alpha=0.9)
+ax7.fill_between(recall_vae, precision_vae, alpha=0.15, color=COLOR_VAE)
+
+ax7.set_xlabel('Recall (Malicious)', fontsize=13, fontweight='bold', color='white')
+ax7.set_ylabel('Precision', fontsize=13, fontweight='bold', color='white')
+ax7.set_title('Bieu do 7: Precision-Recall Curve Comparison', fontsize=15, fontweight='bold', pad=15, color='white')
+ax7.legend(fontsize=12, loc='lower left', fancybox=True, framealpha=0.8, edgecolor='#555')
+ax7.grid(True, alpha=0.3)
+ax7.set_xlim([-0.02, 1.02])
+ax7.set_ylim([-0.02, 1.02])
+
+fig7.tight_layout()
+fig7.savefig(os.path.join(SAVE_DIR, '07_precision_recall_curve.png'), dpi=200, bbox_inches='tight', facecolor=BG_DARK)
+plt.show()
+print('Da luu: charts/07_precision_recall_curve.png')
+
+=== Cell 39 ===
+# Tinh toan them Recall Malicious, AP, va F1 Macro
+iso_recall = iso_cm[1][1] / (iso_cm[1][1] + iso_cm[1][0]) if (iso_cm[1][1] + iso_cm[1][0]) > 0 else 0
+vae_recall = vae_cm[1][1] / (vae_cm[1][1] + vae_cm[1][0]) if (vae_cm[1][1] + vae_cm[1][0]) > 0 else 0
+
+from sklearn.metrics import average_precision_score
+ap_if = average_precision_score(y_eval, iso_scores)
+ap_vae = average_precision_score(y_eval, re_eval)
+
+# F1 Macro cho ca hai
+iso_f1_macro = f1_score(y_eval, iso_pred, average='macro')
+vae_f1_macro = f1_score(y_eval, vae_pred, average='macro')
+
+print('=' * 70)
+print('  TONG KET KET QUA')
+print('=' * 70)
+print(f'''
+  +----------------------+------------------+------------------+
+  |      Chi so          | Isolation Forest |       VAE        |
+  +----------------------+------------------+------------------+
+  |  F1 Score (weighted) |     {iso_f1:.4f}       |     {vae_f1:.4f}       |
+  |  F1 Score (macro)    |     {iso_f1_macro:.4f}       |     {vae_f1_macro:.4f}       |
+  |  AUC                 |     {auc_if:.4f}       |     {auc_vae:.4f}       |
+  |  AP (Average Prec.)  |     {ap_if:.4f}       |     {ap_vae:.4f}       |
+  |  Recall Malicious    |     {iso_recall:.4f}       |     {vae_recall:.4f}       |
+  |  True Positive  (TP) |     {iso_cm[1][1]:>5d}        |     {vae_cm[1][1]:>5d}        |
+  |  False Positive (FP) |     {iso_cm[0][1]:>5d}        |     {vae_cm[0][1]:>5d}        |
+  |  True Negative  (TN) |     {iso_cm[0][0]:>5d}        |     {vae_cm[0][0]:>5d}        |
+  |  False Negative (FN) |     {iso_cm[1][0]:>5d}        |     {vae_cm[1][0]:>5d}        |
+  +----------------------+------------------+------------------+
+''')
+
+if auc_vae > auc_if:
+    print('  >>> KET LUAN: VAE (Deep Learning) VUOT TROI hon Isolation Forest')
+    print('      trong viec phat hien tan cong Credential Stuffing tren LMS Moodle.')
+else:
+    print('  >>> KET LUAN: Ca hai mo hinh deu cho ket qua tot.')
+    print('      Can tinh chinh them hyperparameter de toi uu VAE.')
+
+print(f'\n  Tat ca bieu do da duoc luu tai: {os.path.abspath(SAVE_DIR)}')
+print('=' * 70)
+
+=== Cell 40 ===
+import pickle
+import json
+import os
+
+#  Tạo thư mục lưu trữ mô hình để SOAR nạp sau này
+MODEL_DIR = 'deploy_models'
+os.makedirs(MODEL_DIR, exist_ok=True)
+
+# 1️Lưu MinMaxScaler (Cực kỳ quan trọng để chuẩn hóa dữ liệu log mới)
+scaler_path = os.path.join(MODEL_DIR, 'minmax_scaler.pkl')
+with open(scaler_path, 'wb') as f:
+    pickle.dump(scaler, f)
+print(f' Đã lưu Scaler tại: {scaler_path}')
+
+# Lưu Isolation Forest model (Mô hình Baseline)
+if_path = os.path.join(MODEL_DIR, 'isolation_forest.pkl')
+with open(if_path, 'wb') as f:
+    pickle.dump(iso_forest, f)
+print(f'Đã lưu Isolation Forest tại: {if_path}')
+
+#  Lưu VAE Encoder & Decoder riêng biệt (định dạng .keras chuẩn)
+encoder_path = os.path.join(MODEL_DIR, 'vae_encoder.keras')
+decoder_path = os.path.join(MODEL_DIR, 'vae_decoder.keras')
+encoder.save(encoder_path)
+decoder.save(decoder_path)
+print(f' Đã lưu VAE Encoder tại: {encoder_path}')
+print(f'Đã lưu VAE Decoder tại: {decoder_path}')
+
+#  Lưu cấu hình ngưỡng động và đặc trưng đầu vào phục vụ SOAR
+soar_config = {
+    'vae_threshold': float(threshold),
+    'feature_cols': FEATURE_COLS,
+    'contamination_ratio': float(contamination_ratio)
+}
+config_path = os.path.join(MODEL_DIR, 'soar_config.json')
+with open(config_path, 'w', encoding='utf-8') as f:
+    json.dump(soar_config, f, indent=4, ensure_ascii=False)
+print(f'Đã lưu cấu hình ngưỡng SOAR tại: {config_path}')
+
+

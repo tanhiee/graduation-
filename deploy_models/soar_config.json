@@ -1,0 +1,13 @@
+{
+    "vae_threshold": 0.11205343902111053,
+    "feature_cols": [
+        "req_per_IP_5min",
+        "error_ratio_per_IP",
+        "unique_UA_per_IP",
+        "size",
+        "time_gap_per_IP",
+        "req_regularity_per_IP",
+        "hour_of_day"
+    ],
+    "contamination_ratio": 0.010324455205811139
+}

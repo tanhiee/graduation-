@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hệ thống SOAR Phát Hiện Tấn Công Credential Stuffing Real-Time</title>
+    
+    <!-- Google Fonts: Outfit & Monospace -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@300;400;500;700&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS (Để quản lý layout nhanh) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Chart.js để vẽ biểu đồ Real-Time -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Custom styling cho giao diện Glassmorphism cực kỳ cao cấp -->
+    <style>
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: radial-gradient(circle at 50% 50%, #0d1321 0%, #07090e 100%);
+            color: #f3f4f6;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Hiệu ứng kính Glassmorphism */
+        .glass-panel {
+            background: rgba(17, 24, 39, 0.65);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+
+        .glass-panel:hover {
+            border-color: rgba(255, 255, 255, 0.08);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+            transition: all 0.3s ease;
+        }
+
+        /* Monospace terminal logs */
+        .terminal-log {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            line-height: 1.5;
+        }
+
+        /* Pulsing indicator for active status */
+        .pulse-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background-color: #00ff88;
+            box-shadow: 0 0 10px #00ff88;
+            animation: pulse 1.8s infinite;
+        }
+
+        .pulse-indicator.paused {
+            background-color: #f59e0b;
+            box-shadow: 0 0 10px #f59e0b;
+            animation: none;
+        }
+
+        @keyframes pulse {
+            0% {
+                transform: scale(0.95);
+                box-shadow: 0 0 0 0 rgba(0, 255, 136, 0.7);
+            }
+            70% {
+                transform: scale(1);
+                box-shadow: 0 0 0 8px rgba(0, 255, 136, 0);
+            }
+            100% {
+                transform: scale(0.95);
+                box-shadow: 0 0 0 0 rgba(0, 255, 136, 0);
+            }
+        }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.1);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        /* Fade-in-up animation cho logs mới */
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(12px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .log-item-new {
+            animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+
+        /* Giao diện nút bấm phát sáng */
+        .glowing-btn-red {
+            box-shadow: 0 0 15px rgba(239, 68, 68, 0.15);
+            transition: all 0.3s ease;
+        }
+        .glowing-btn-red:hover {
+            box-shadow: 0 0 25px rgba(239, 68, 68, 0.4);
+            transform: translateY(-1px);
+        }
+        .glowing-btn-cyan {
+            box-shadow: 0 0 15px rgba(6, 182, 212, 0.15);
+            transition: all 0.3s ease;
+        }
+        .glowing-btn-cyan:hover {
+            box-shadow: 0 0 25px rgba(6, 182, 212, 0.4);
+            transform: translateY(-1px);
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+
+    <!-- Header -->
+    <header class="max-w-7xl mx-auto mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+            <div class="flex items-center gap-3">
+                <span class="text-3xl">🛡️</span>
+                <h1 class="text-2xl md:text-3xl font-extrabold tracking-tight bg-gradient-to-r from-cyan-400 via-blue-500 to-indigo-500 bg-clip-text text-transparent">
+                    SOAR SECURITY OPERATIONS DASHBOARD
+                </h1>
+            </div>
+            <p class="text-gray-400 text-sm mt-1">
+                Hệ thống Tự động hóa & Phản ứng An ninh An toàn Thông tin - Tích hợp VAE Học Sâu (Deep Learning) phát hiện tấn công Credential Stuffing trên LMS Moodle
+            </p>
+        </div>
+        <div class="flex items-center gap-4 glass-panel px-4 py-2">
+            <div id="statusPulse" class="pulse-indicator"></div>
+            <span class="font-semibold text-sm tracking-wide" id="statusText">SOAR ACTIVE & SCANNING</span>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto grid grid-cols-1 gap-6">
+        
+        <!-- Metrics Row -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <!-- Metric 1: Scanned Logs -->
+            <div class="glass-panel p-5 relative overflow-hidden flex flex-col justify-between h-32">
+                <div class="flex justify-between items-start">
+                    <span class="text-sm font-semibold tracking-wider text-cyan-400 uppercase">TỔNG SỐ LOGS ĐÃ QUÉT</span>
+                    <span class="text-2xl">📊</span>
+                </div>
+                <div class="flex items-baseline gap-2">
+                    <span class="text-4xl font-extrabold tracking-tight" id="metricTotalScanned">0</span>
+                    <span class="text-xs text-gray-500 font-medium">logs live stream</span>
+                </div>
+                <div class="absolute bottom-0 left-0 w-full h-1 bg-cyan-500 opacity-30"></div>
+            </div>
+
+            <!-- Metric 2: Anomalies Blocked -->
+            <div class="glass-panel p-5 relative overflow-hidden flex flex-col justify-between h-32">
+                <div class="flex justify-between items-start">
+                    <span class="text-sm font-semibold tracking-wider text-red-500 uppercase">TẤN CÔNG BỊ CHẶN (VAE)</span>
+                    <span class="text-2xl text-red-500 animate-pulse">🚨</span>
+                </div>
+                <div class="flex items-baseline gap-2">
+                    <span class="text-4xl font-extrabold tracking-tight text-red-400" id="metricAnomalies">0</span>
+                    <span class="text-xs text-red-500/80 font-bold uppercase tracking-widest">quarantined</span>
+                </div>
+                <div class="absolute bottom-0 left-0 w-full h-1 bg-red-500 opacity-40"></div>
+            </div>
+
+            <!-- Metric 3: Blocklist Active -->
+            <div class="glass-panel p-5 relative overflow-hidden flex flex-col justify-between h-32">
+                <div class="flex justify-between items-start">
+                    <span class="text-sm font-semibold tracking-wider text-amber-500 uppercase">IP BỊ KHÓA TRÊN FIREWALL</span>
+                    <span class="text-2xl">🚫</span>
+                </div>
+                <div class="flex items-baseline gap-2">
+                    <span class="text-4xl font-extrabold tracking-tight text-amber-400" id="metricBlocked">0</span>
+                    <span class="text-xs text-gray-500 font-medium">IP active blocklist</span>
+                </div>
+                <div class="absolute bottom-0 left-0 w-full h-1 bg-amber-500 opacity-30"></div>
+            </div>
+
+            <!-- Metric 4: AI Threshold -->
+            <div class="glass-panel p-5 relative overflow-hidden flex flex-col justify-between h-32">
+                <div class="flex justify-between items-start">
+                    <span class="text-sm font-semibold tracking-wider text-emerald-400 uppercase">NGƯỠNG BÁO ĐỘNG (95TH MAE)</span>
+                    <span class="text-2xl">🎯</span>
+                </div>
+                <div class="flex items-baseline gap-2">
+                    <span class="text-3xl font-extrabold tracking-tight text-emerald-400" id="metricThreshold">0.000000</span>
+                </div>
+                <div class="absolute bottom-0 left-0 w-full h-1 bg-emerald-500 opacity-30"></div>
+            </div>
+        </div>
+
+        <!-- Dashboard Main Grid split (Left 65% / Right 35%) -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            <!-- Left Side Column (2 cols wide) -->
+            <div class="lg:col-span-2 space-y-6">
+                <!-- VAE Reconstruction Error Real-Time Chart -->
+                <div class="glass-panel p-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <div>
+                            <h2 class="text-lg font-bold tracking-tight text-white flex items-center gap-2">
+                                📈 BIỂU ĐỒ LIVE TRAFFIC LỖI GIẢI NÉN (VAE MAE ERROR)
+                            </h2>
+                            <p class="text-xs text-gray-400">Các điểm vượt đường gạch đỏ sẽ tự động kích hoạt SOAR Playbook chặn IP.</p>
+                        </div>
+                    </div>
+                    <div class="w-full h-[260px]">
+                        <canvas id="realTimeChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Live Log Stream Monitor -->
+                <div class="glass-panel p-6 flex flex-col h-[400px]">
+                    <div class="flex justify-between items-center mb-4">
+                        <div>
+                            <h2 class="text-lg font-bold tracking-tight text-white flex items-center gap-2">
+                                🖥️ LIVE TRAFFIC MONITOR
+                            </h2>
+                            <p class="text-xs text-gray-400">Log hoạt động truy cập hệ thống LMS Moodle được quét trực tiếp.</p>
+                        </div>
+                        <div class="text-xs font-semibold text-cyan-400 tracking-wider">REAL-TIME FEEDS</div>
+                    </div>
+                    <div class="flex-grow overflow-y-auto pr-2" id="logStreamContainer">
+                        <table class="w-full text-left border-collapse text-sm">
+                            <thead>
+                                <tr class="text-gray-500 font-bold border-b border-gray-800 text-xs">
+                                    <th class="pb-2 w-[18%]">TIME</th>
+                                    <th class="pb-2 w-[22%]">IP ADDRESS</th>
+                                    <th class="pb-2 w-[15%]">VAE ERROR</th>
+                                    <th class="pb-2 w-[25%]">DETECTION STATUS</th>
+                                    <th class="pb-2 text-right">LABEL (ACTUAL)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="logStreamTableBody">
+                                <!-- Logs will stream in dynamically here -->
+                                <tr class="text-gray-500 text-center py-8" id="emptyLogsPlaceholder">
+                                    <td colspan="5" class="py-12">Đang đợi dòng log kết nối...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Side Column (1 col wide) -->
+            <div class="space-y-6">
+                <!-- Control Center Panel -->
+                <div class="glass-panel p-6">
+                    <h2 class="text-lg font-bold tracking-tight text-white mb-4 flex items-center gap-2">
+                        🎮 BÀN ĐIỀU KHIỂN HỆ THỐNG
+                    </h2>
+                    <div class="grid grid-cols-2 gap-3 mb-4">
+                        <button id="toggleBtn" onclick="toggleStream()" class="py-2.5 px-4 font-bold rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-sm glowing-btn-cyan flex items-center justify-center gap-2">
+                            <span>⏸️ Pause Stream</span>
+                        </button>
+                        <button onclick="resetBlocklist()" class="py-2.5 px-4 font-bold rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm flex items-center justify-center gap-2">
+                            <span>🔄 Reset Firewall</span>
+                        </button>
+                    </div>
+                    
+                    <!-- High Traffic Season Toggle Switch -->
+                    <div class="pt-4 pb-2 border-t border-gray-800 flex justify-between items-center">
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-400 uppercase">MÙA CAO ĐIỂM (CONCEPT DRIFT)</label>
+                            <span class="text-[10px] text-gray-500" id="highTrafficStatus">Trạng thái: Tắt (Chặn cứng Tier 1)</span>
+                        </div>
+                        <button id="highTrafficToggleBtn" onclick="toggleHighTraffic()" class="py-1.5 px-3 font-bold rounded bg-gray-800 hover:bg-gray-700 text-amber-500 border border-gray-700 text-xs flex items-center gap-2 transition-all duration-300">
+                            <span>🍂 Bật Cao Điểm</span>
+                        </button>
+                    </div>
+                    
+                    <!-- Manual Block IP Form -->
+                    <div class="pt-4 border-t border-gray-800">
+                        <label class="block text-xs font-semibold text-gray-400 uppercase mb-2">Chủ động khóa IP (Manual Containment)</label>
+                        <div class="flex gap-2">
+                            <input type="text" id="manualIpInput" placeholder="Ví dụ: 192.168.1.15" class="bg-gray-950 border border-gray-800 rounded-lg px-3 py-1.5 text-sm flex-grow text-white focus:outline-none focus:border-cyan-500 font-mono">
+                            <button onclick="manualBlock()" class="px-4 py-1.5 font-bold rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm glowing-btn-red">
+                                Khóa
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Active Blocklist Panel -->
+                <div class="glass-panel p-6 flex flex-col h-[280px]">
+                    <div class="flex justify-between items-center mb-3">
+                        <h2 class="text-sm font-bold tracking-wider text-amber-500 uppercase flex items-center gap-2">
+                            🚫 DANH SÁCH IP BỊ CÁCH LY (FIREWALL BLOCKLIST)
+                        </h2>
+                        <span class="px-2 py-0.5 text-[10px] font-bold bg-amber-500/10 text-amber-500 rounded border border-amber-500/20" id="blocklistCount">0 IP</span>
+                    </div>
+                    <div class="flex-grow overflow-y-auto pr-2 text-xs font-mono space-y-2" id="blocklistContainer">
+                        <!-- Blocked IPs lists -->
+                        <div class="text-gray-500 text-center py-8" id="emptyBlocklistPlaceholder">Không có IP nào bị hạn chế.</div>
+                    </div>
+                </div>
+
+                <!-- Monospace SOAR Playbook Execution Logs -->
+                <div class="glass-panel p-6 flex flex-col h-[280px]">
+                    <div class="flex justify-between items-center mb-3">
+                        <h2 class="text-sm font-bold tracking-wider text-red-400 uppercase flex items-center gap-2">
+                            ⚡ KỊCH BẢN PHẢN ỨNG SOAR (PLAYBOOK LOGS)
+                        </h2>
+                        <span class="px-2 py-0.5 text-[10px] font-bold bg-cyan-500/10 text-cyan-400 rounded border border-cyan-500/20">LIVE SOAR</span>
+                    </div>
+                    <div class="flex-grow overflow-y-auto pr-2 bg-black/60 rounded-lg p-3 text-cyan-400 terminal-log flex flex-col-reverse space-y-reverse space-y-2 h-[200px]" id="playbookTerminal">
+                        <div class="text-cyan-600">[SYSTEM] Hệ thống SOAR đang giám sát live event stream...</div>
+                    </div>
+                </div>
+
+                <!-- Architecture Proposal Panel -->
+                <div class="glass-panel p-6 flex flex-col shadow-lg transition-all duration-300">
+                    <h2 class="text-xs font-bold tracking-wider text-indigo-400 uppercase flex items-center gap-2 mb-2">
+                        ⛓️ KIẾN TRÚC MESSAGE QUEUE ĐỀ XUẤT (KAFKA / RABBITMQ)
+                    </h2>
+                    <p class="text-[11px] text-gray-400 leading-relaxed">
+                        Để tránh thắt cổ chai (bottleneck) khi có hàng ngàn cảnh báo đồng thời, hệ thống đề xuất kiến trúc xử lý bất đồng bộ:
+                    </p>
+                    <div class="my-3 p-2.5 bg-black/40 border border-indigo-950 rounded-lg text-[10px] font-mono leading-normal">
+                        <div class="flex justify-between items-center text-cyan-400">
+                            <span>[AI Engine]</span>
+                            <span>── Push Alert ──&gt;</span>
+                            <span class="text-indigo-400 font-bold bg-indigo-500/10 px-1 border border-indigo-500/20 rounded">[ Queue ]</span>
+                        </div>
+                        <div class="flex justify-between items-center text-gray-500 my-1">
+                            <span>(Async Engine)</span>
+                            <span></span>
+                            <span>(RabbitMQ/Kafka)</span>
+                        </div>
+                        <div class="flex justify-between items-center text-emerald-400">
+                            <span>[SOAR Worker]</span>
+                            <span>&lt;── Pull & Execute ─</span>
+                            <span class="text-indigo-400 font-bold bg-indigo-500/10 px-1 border border-indigo-500/20 rounded">[ Queue ]</span>
+                        </div>
+                    </div>
+                    <p class="text-[10px] text-gray-500 italic">
+                        Giải pháp giúp loại bỏ trễ chặn mạng, tăng khả năng chịu tải lên tới 10,000+ alerts/giây.
+                    </p>
+                </div>
+            </div>
+
+        </div>
+
+    </main>
+
+    <!-- JavaScript logic -->
+    <script>
+        // Cấu hình Biểu đồ Real-time Chart.js
+        const ctx = document.getElementById('realTimeChart').getContext('2d');
+        const MAX_DATA_POINTS = 30;
+        
+        const chartData = {
+            labels: Array(MAX_DATA_POINTS).fill(''),
+            datasets: [
+                {
+                    label: 'MAE Reconstruction Error',
+                    data: Array(MAX_DATA_POINTS).fill(null),
+                    borderColor: '#22d3ee',
+                    backgroundColor: 'rgba(6, 182, 212, 0.1)',
+                    borderWidth: 2.5,
+                    tension: 0.3,
+                    fill: true,
+                    pointRadius: 4,
+                    pointBackgroundColor: '#06b6d4'
+                },
+                {
+                    label: 'Ngưỡng VAE Threshold',
+                    data: Array(MAX_DATA_POINTS).fill(null),
+                    borderColor: '#ef4444',
+                    borderWidth: 1.5,
+                    borderDash: [5, 5],
+                    fill: false,
+                    pointRadius: 0
+                }
+            ]
+        };
+
+        const chartOptions = {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: {
+                duration: 0 // Tắt animation để vẽ thời gian thực nhanh và mượt mà
+            },
+            plugins: {
+                legend: {
+                    labels: {
+                        color: '#9ca3af',
+                        font: { size: 11, family: 'Outfit' }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    min: 0,
+                    suggestedMax: 0.3,
+                    grid: { color: 'rgba(255, 255, 255, 0.03)' },
+                    ticks: {
+                        color: '#9ca3af',
+                        font: { family: 'JetBrains Mono', size: 10 }
+                    }
+                },
+                x: {
+                    grid: { display: false },
+                    ticks: { display: false }
+                }
+            }
+        };
+
+        const realTimeChart = new Chart(ctx, {
+            type: 'line',
+            data: chartData,
+            options: chartOptions
+        });
+
+        let pollInterval = null;
+
+        // Bắt đầu vòng lặp thăm dò API (Poll API)
+        function startPolling() {
+            if (pollInterval) clearInterval(pollInterval);
+            pollInterval = setInterval(fetchUpdate, 1000); // Thăm dò API mỗi 1 giây
+        }
+
+        // Gọi API để cập nhật giao diện
+        async function fetchUpdate() {
+            try {
+                const response = await fetch('/api/status');
+                const data = await response.json();
+                
+                // Cập nhật trạng thái Protection
+                const statusText = document.getElementById('statusText');
+                const statusPulse = document.getElementById('statusPulse');
+                const toggleBtn = document.getElementById('toggleBtn');
+                
+                if (data.is_running) {
+                    statusText.innerText = "SOAR ACTIVE & SAFEGARDING";
+                    statusPulse.className = "pulse-indicator";
+                    toggleBtn.innerHTML = "<span>⏸️ Pause Stream</span>";
+                    toggleBtn.className = "py-2.5 px-4 font-bold rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-sm glowing-btn-cyan flex items-center justify-center gap-2";
+                } else {
+                    statusText.innerText = "SOAR PAUSED";
+                    statusPulse.className = "pulse-indicator paused";
+                    toggleBtn.innerHTML = "<span>▶️ Start Stream</span>";
+                    toggleBtn.className = "py-2.5 px-4 font-bold rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm flex items-center justify-center gap-2";
+                }
+
+                // Cập nhật trạng thái Mùa Cao Điểm (Concept Drift)
+                const highTrafficStatus = document.getElementById('highTrafficStatus');
+                const highTrafficToggleBtn = document.getElementById('highTrafficToggleBtn');
+                if (data.is_high_traffic_season) {
+                    highTrafficStatus.innerText = "Trạng thái: Bật (Hạ cấp cảnh báo Tier 2)";
+                    highTrafficStatus.className = "text-[10px] text-amber-400 font-bold";
+                    highTrafficToggleBtn.innerHTML = "<span>🍂 Tắt Cao Điểm</span>";
+                    highTrafficToggleBtn.className = "py-1.5 px-3 font-bold rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/40 text-xs flex items-center gap-2 transition-all duration-300";
+                } else {
+                    highTrafficStatus.innerText = "Trạng thái: Tắt (Chặn cứng Tier 1)";
+                    highTrafficStatus.className = "text-[10px] text-gray-500";
+                    highTrafficToggleBtn.innerHTML = "<span>🍂 Bật Cao Điểm</span>";
+                    highTrafficToggleBtn.className = "py-1.5 px-3 font-bold rounded bg-gray-800 hover:bg-gray-700 text-amber-500 border border-gray-700 text-xs flex items-center gap-2 transition-all duration-300";
+                }
+
+                // Cập nhật Metrics
+                document.getElementById('metricTotalScanned').innerText = data.metrics.total_scanned;
+                document.getElementById('metricAnomalies').innerText = data.metrics.anomalies_detected;
+                document.getElementById('metricBlocked').innerText = data.metrics.active_blocked_ips;
+                document.getElementById('metricThreshold').innerText = data.metrics.vae_threshold.toFixed(6);
+
+                // Cập nhật đường ngưỡng ngang trên biểu đồ
+                realTimeChart.data.datasets[1].data = Array(MAX_DATA_POINTS).fill(data.metrics.vae_threshold);
+
+                // Xử lý Logs mới từ Live Stream
+                if (data.new_events && data.new_events.length > 0) {
+                    const emptyLogs = document.getElementById('emptyLogsPlaceholder');
+                    if (emptyLogs) emptyLogs.remove();
+                    
+                    const tbody = document.getElementById('logStreamTableBody');
+                    
+                    data.new_events.forEach(event => {
+                        // Thêm dữ liệu vào biểu đồ
+                        chartData.datasets[0].data.shift();
+                        chartData.datasets[0].data.push(event.vae_error);
+                        
+                        // Tạo dòng log mới trong table
+                        const tr = document.createElement('tr');
+                        tr.className = "border-b border-gray-900 text-xs py-2 log-item-new";
+                        
+                        let statusBadge = "";
+                        let statusColorClass = "text-gray-300";
+                        
+                        if (event.is_blocked) {
+                            if (event.is_vae_anomaly) {
+                                statusBadge = `<span class="px-2 py-0.5 rounded bg-red-600/90 text-white font-bold text-[10px] tracking-wider uppercase animate-pulse">🚨 INTRUSION BLOCKED</span>`;
+                                statusColorClass = "text-red-400 font-semibold";
+                            } else {
+                                statusBadge = `<span class="px-2 py-0.5 rounded bg-gray-800 text-gray-400 font-semibold text-[10px] uppercase">BLOCKED (FIREWALL)</span>`;
+                                statusColorClass = "text-gray-400";
+                            }
+                        } else if (event.is_if_anomaly) {
+                            statusBadge = `<span class="px-2 py-0.5 rounded bg-amber-500/20 text-amber-500 font-bold text-[10px] uppercase border border-amber-500/30">⚠️ INVESTIGATING</span>`;
+                            statusColorClass = "text-amber-400";
+                        } else {
+                            statusBadge = `<span class="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-medium text-[10px] uppercase border border-emerald-500/20">NORMAL</span>`;
+                            statusColorClass = "text-emerald-400";
+                        }
+
+                        // Tính nhãn nhị phân
+                        const labelBadge = event.label === 1 
+                            ? `<span class="text-red-500 font-bold">Malicious</span>` 
+                            : `<span class="text-gray-500">Normal</span>`;
+                        
+                        tr.innerHTML = `
+                            <td class="py-3 text-gray-500 font-mono">${event.timestamp.split(' ')[1]}</td>
+                            <td class="py-3 ${statusColorClass} font-mono font-bold">${event.ip}</td>
+                            <td class="py-3 font-mono font-medium">${event.vae_error.toFixed(5)}</td>
+                            <td class="py-3">${statusBadge}</td>
+                            <td class="py-3 text-right">${labelBadge}</td>
+                        `;
+                        
+                        // Chèn log lên đầu danh sách hiển thị
+                        tbody.insertBefore(tr, tbody.firstChild);
+                        
+                        // Giới hạn hiển thị tối đa 50 dòng trong table
+                        if (tbody.children.length > 50) {
+                            tbody.removeChild(tbody.lastChild);
+                        }
+                    });
+                    
+                    realTimeChart.update();
+                }
+
+                // Cập nhật danh sách Blocklist bên phải
+                const blocklistContainer = document.getElementById('blocklistContainer');
+                document.getElementById('blocklistCount').innerText = `${data.blocklist.length} IP`;
+                
+                if (data.blocklist.length === 0) {
+                    blocklistContainer.innerHTML = `<div class="text-gray-500 text-center py-8" id="emptyBlocklistPlaceholder">Không có IP nào bị hạn chế.</div>`;
+                } else {
+                    blocklistContainer.innerHTML = '';
+                    data.blocklist.forEach(item => {
+                        const div = document.createElement('div');
+                        div.className = "flex justify-between items-center bg-gray-950/60 p-2.5 rounded-lg border border-gray-900 log-item-new";
+                        div.innerHTML = `
+                            <div>
+                                <div class="text-red-400 font-bold">${item.ip}</div>
+                                <div class="text-[9px] text-gray-500">Blocked: ${item.time.split(' ')[1]}</div>
+                            </div>
+                            <button onclick="manualUnblock('${item.ip}')" class="px-2.5 py-1 text-[10px] font-bold bg-emerald-500/10 hover:bg-emerald-500 text-emerald-400 hover:text-white rounded border border-emerald-500/20 transition-all duration-200 uppercase">
+                                Gỡ bỏ
+                            </button>
+                        `;
+                        blocklistContainer.appendChild(div);
+                    });
+                }
+
+                // Cập nhật Terminal Playbook của SOAR
+                const terminal = document.getElementById('playbookTerminal');
+                if (data.playbook_logs && data.playbook_logs.length > 0) {
+                    terminal.innerHTML = '';
+                    data.playbook_logs.forEach(log => {
+                        const div = document.createElement('div');
+                        
+                        // Tô màu log tùy theo mức độ nghiêm trọng
+                        if (log.includes("🚨") || log.includes("ALERT")) {
+                            div.className = "text-red-400 font-bold";
+                        } else if (log.includes("⚠️") || log.includes("WARNING")) {
+                            div.className = "text-amber-400 font-semibold";
+                        } else if (log.includes("🛡️") || log.includes("SOAR PLAYBOOK")) {
+                            div.className = "text-cyan-300 font-medium";
+                        } else if (log.includes("⚙️") || log.includes("SYSTEM")) {
+                            div.className = "text-gray-400";
+                        } else {
+                            div.className = "text-cyan-500/80";
+                        }
+                        
+                        div.innerText = log;
+                        terminal.appendChild(div);
+                    });
+                }
+
+            } catch (err) {
+                console.error("Lỗi khi đồng bộ hóa SOAR:", err);
+            }
+        }
+
+        // Hành động điều khiển: Start/Pause Stream
+        async function toggleStream() {
+            const response = await fetch('/api/toggle', { method: 'POST' });
+            const data = await response.json();
+            fetchUpdate();
+        }
+
+        // Hành động điều khiển: Reset Blocklist
+        async function resetBlocklist() {
+            if(confirm("Bạn có chắc chắn muốn xóa toàn bộ Blocklist và khôi phục Firewall ban đầu?")) {
+                const response = await fetch('/api/reset-blocklist', { method: 'POST' });
+                fetchUpdate();
+            }
+        }
+
+        // Hành động điều khiển: Toggle High Traffic Season
+        async function toggleHighTraffic() {
+            const response = await fetch('/api/toggle-high-traffic', { method: 'POST' });
+            const data = await response.json();
+            fetchUpdate();
+        }
+
+        // Chặn IP thủ công từ form
+        async function manualBlock() {
+            const input = document.getElementById('manualIpInput');
+            const ip = input.value.trim();
+            if (!ip) return;
+            
+            // Regex cơ bản check IPv4
+            const ipPattern = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/;
+            if (!ipPattern.test(ip)) {
+                alert("Địa chỉ IP không đúng định dạng IPv4!");
+                return;
+            }
+            
+            const response = await fetch('/api/manual-block', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ip: ip })
+            });
+            
+            if (response.ok) {
+                input.value = '';
+                fetchUpdate();
+            }
+        }
+
+        // Gỡ chặn IP
+        async function manualUnblock(ip) {
+            const response = await fetch('/api/manual-unblock', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ip: ip })
+            });
+            if (response.ok) {
+                fetchUpdate();
+            }
+        }
+
+        // Khởi chạy khi tải trang
+        fetchUpdate();
+        startPolling();
+    </script>
+</body>
+</html>
